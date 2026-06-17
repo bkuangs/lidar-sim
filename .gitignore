@@ -5,3 +5,5 @@ dist/
 .vscode/
 /build/
 /docs/
+CODEX.md
+CMakeLists.txt
