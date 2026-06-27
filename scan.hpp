@@ -4,6 +4,7 @@
 #include <Eigen/Dense>
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include "scene.hpp"
 #include "lidar.hpp"
 
@@ -28,7 +29,8 @@ struct ScanResult
     std::map<int, int> hit_counts;
 };
 
-ScanResult scanScene(const Scene &scene, const Lidar &lidar)
+template <typename Intersector>
+ScanResult scanWithIntersector(const Lidar &lidar, Intersector intersect)
 {
     ScanResult scan;
     scan.points.reserve(lidar.azimuthSamples * lidar.elevationSamples);
@@ -55,6 +57,8 @@ ScanResult scanScene(const Scene &scene, const Lidar &lidar)
 
         for (int h = 0; h < lidar.azimuthSamples; ++h)
         {
+            ++scan.total_rays;
+
             double hf = static_cast<double>(h) / lidar.azimuthSamples;
 
             // horizontal angle
@@ -68,7 +72,7 @@ ScanResult scanScene(const Scene &scene, const Lidar &lidar)
             ray.ori = lidar.pose.translation();         // ray starts at lidar pose
             ray.dir = lidar.pose.rotation() * localDir; // convert local ray direction to world frame
 
-            Hit hit = scene.intersect(ray);
+            Hit hit = intersect(ray);
 
             if (hit.hit && hit.t >= lidar.minRange && hit.t <= lidar.maxRange)
             {
@@ -87,9 +91,16 @@ ScanResult scanScene(const Scene &scene, const Lidar &lidar)
                     hit.objId};
 
                 scan.points.push_back(point);
+                ++scan.hit_counts[hit.objId];
             }
         }
     }
 
     return scan;
+}
+
+inline ScanResult scanScene(const Scene &scene, const Lidar &lidar)
+{
+    return scanWithIntersector(lidar, [&scene](const Ray &ray)
+                               { return scene.intersect(ray); });
 }

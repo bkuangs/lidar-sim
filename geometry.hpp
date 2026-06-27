@@ -87,6 +87,13 @@ class Geometry
 public:
     virtual ~Geometry() = default;
     virtual Hit intersect(const Ray &ray) const = 0; // "= 0" -> pure virtual function, derived classes MUST override
+    virtual bool hasFiniteBounds() const { return false; }
+    virtual AABB bounds() const
+    {
+        AABB bbox;
+        bbox.setEmpty();
+        return bbox;
+    }
 };
 
 /**
@@ -122,6 +129,16 @@ public:
         hit = Hit{true, t, p, n, 1.0, objId_};
 
         return hit;
+    }
+
+    bool hasFiniteBounds() const override { return true; }
+
+    AABB bounds() const override
+    {
+        AABB bbox;
+        bbox.extend(center_ - Vec3::Constant(radius_));
+        bbox.extend(center_ + Vec3::Constant(radius_));
+        return bbox;
     }
 
 private:
@@ -190,6 +207,19 @@ public:
         hit(ray, rootNodeIndex_, closest);
 
         return closest;
+    }
+
+    bool hasFiniteBounds() const override { return true; }
+
+    AABB bounds() const override
+    {
+        AABB bbox;
+        bbox.setEmpty();
+
+        for (const Vec3 &vertex : vertices_)
+            bbox.extend(vertex);
+
+        return bbox;
     }
 
     Hit bruteForceIntersect(const Ray &ray) const

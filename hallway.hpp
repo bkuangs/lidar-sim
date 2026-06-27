@@ -1,10 +1,22 @@
 #pragma once
 #include "scene.hpp"
+#include <algorithm>
 #include <random>
+
+enum class ObstacleShape
+{
+    Sphere,
+    Cube
+};
 
 struct ActiveObstacle
 {
     double x = 0.0;
+    Vec3 center = Vec3::Zero();
+    double size = 0.0;
+    int object_id = -1;
+    ObstacleShape shape = ObstacleShape::Cube;
+    AABB bounds;
     std::shared_ptr<Geometry> geometry;
 };
 
@@ -16,6 +28,8 @@ struct HallwayWorld
     double window_ahead = 60.0;
     double next_obstacle_x = 6.0;
     int next_object_id = 10;
+    unsigned int seed = 42;
+    int revision = 0;
     std::mt19937 rng;
     std::vector<ActiveObstacle> obstacles;
 };
@@ -50,15 +64,15 @@ std::shared_ptr<TriangleMeshGeometry> makeCube(
     return std::make_shared<TriangleMeshGeometry>(v, t, object_id);
 }
 
-HallwayWorld makeHallwayWorld()
+HallwayWorld makeHallwayWorld(unsigned int seed = 42)
 {
-    std::random_device seed;
-    std::mt19937 rng(seed());
+    std::mt19937 rng(seed);
 
     std::uniform_real_distribution<double> width_dist(3.0, 5.0);
     std::uniform_real_distribution<double> height_dist(2.6, 4.0);
 
     HallwayWorld world;
+    world.seed = seed;
     world.half_width = width_dist(rng) * 0.5;
     world.height = height_dist(rng);
     world.rng = std::move(rng);
@@ -66,7 +80,7 @@ HallwayWorld makeHallwayWorld()
     return world;
 }
 
-std::shared_ptr<Geometry> makeRandomObstacle(HallwayWorld &world, double x)
+ActiveObstacle makeRandomObstacle(HallwayWorld &world, double x)
 {
     constexpr double wall_margin = 0.15;
 
@@ -82,16 +96,32 @@ std::shared_ptr<Geometry> makeRandomObstacle(HallwayWorld &world, double x)
 
     Vec3 center(x, y_dist(world.rng), half);
     int object_id = world.next_object_id++;
+    ObstacleShape shape = shape_dist(world.rng) == 0
+                              ? ObstacleShape::Sphere
+                              : ObstacleShape::Cube;
 
-    if (shape_dist(world.rng) == 0)
-        return std::make_shared<SphereGeometry>(center, half, object_id);
+    std::shared_ptr<Geometry> geometry = shape == ObstacleShape::Sphere
+                                             ? std::static_pointer_cast<Geometry>(
+                                                   std::make_shared<SphereGeometry>(center, half, object_id))
+                                             : std::static_pointer_cast<Geometry>(
+                                                   makeCube(center, size, object_id));
 
-    return makeCube(center, size, object_id);
+    ActiveObstacle obstacle;
+    obstacle.x = x;
+    obstacle.center = center;
+    obstacle.size = size;
+    obstacle.object_id = object_id;
+    obstacle.shape = shape;
+    obstacle.bounds = geometry->bounds();
+    obstacle.geometry = geometry;
+
+    return obstacle;
 }
 
 void updateObstacleWindow(HallwayWorld &world, double lidar_x)
 {
     const double min_x = lidar_x - world.window_behind;
+    const size_t before = world.obstacles.size();
     world.obstacles.erase(
         std::remove_if(
             world.obstacles.begin(),
@@ -102,34 +132,47 @@ void updateObstacleWindow(HallwayWorld &world, double lidar_x)
             }),
         world.obstacles.end());
 
+    bool changed = world.obstacles.size() != before;
+
     std::uniform_real_distribution<double> spacing_dist(2.5, 6.0);
     const double max_x = lidar_x + world.window_ahead;
 
     while (world.next_obstacle_x < max_x)
     {
-        world.obstacles.push_back(ActiveObstacle{
-            world.next_obstacle_x,
-            makeRandomObstacle(world, world.next_obstacle_x)});
+        world.obstacles.push_back(makeRandomObstacle(world, world.next_obstacle_x));
 
         world.next_obstacle_x += spacing_dist(world.rng);
+        changed = true;
     }
+
+    if (changed)
+        ++world.revision;
+}
+
+std::vector<std::shared_ptr<Geometry>> makeHallwayStaticObjects(const HallwayWorld &world)
+{
+    std::vector<std::shared_ptr<Geometry>> objects;
+
+    objects.push_back(std::make_shared<PlaneGeometry>(
+        Vec3(0, 0, 1), Vec3(0, 0, 0), 0)); // floor
+
+    objects.push_back(std::make_shared<PlaneGeometry>(
+        Vec3(0, 0, -1), Vec3(0, 0, world.height), 1)); // ceiling
+
+    objects.push_back(std::make_shared<PlaneGeometry>(
+        Vec3(0, 1, 0), Vec3(0, -world.half_width, 0), 2)); // left wall
+
+    objects.push_back(std::make_shared<PlaneGeometry>(
+        Vec3(0, -1, 0), Vec3(0, world.half_width, 0), 3)); // right wall
+
+    return objects;
 }
 
 Scene makeHallwayScene(const HallwayWorld &world)
 {
     Scene scene;
 
-    scene.objects.push_back(std::make_shared<PlaneGeometry>(
-        Vec3(0, 0, 1), Vec3(0, 0, 0), 0)); // floor
-
-    scene.objects.push_back(std::make_shared<PlaneGeometry>(
-        Vec3(0, 0, -1), Vec3(0, 0, world.height), 1)); // ceiling
-
-    scene.objects.push_back(std::make_shared<PlaneGeometry>(
-        Vec3(0, 1, 0), Vec3(0, -world.half_width, 0), 2)); // left wall
-
-    scene.objects.push_back(std::make_shared<PlaneGeometry>(
-        Vec3(0, -1, 0), Vec3(0, world.half_width, 0), 3)); // right wall
+    scene.objects = makeHallwayStaticObjects(world);
 
     for (const ActiveObstacle &obstacle : world.obstacles)
         scene.objects.push_back(obstacle.geometry);
