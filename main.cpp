@@ -114,6 +114,15 @@ void updatePathLines(
     path_lines.lines_.clear();
     path_lines.colors_.clear();
 
+    if (sim.path.size() < 2)
+    {
+        const Vec3 origin = sim.lidar.pose.translation() + Vec3(0.0, 0.0, -sim.vehicle_config.lidar_height + 0.12);
+        path_lines.points_ = {origin, origin + Vec3(0.001, 0.0, 0.0)};
+        path_lines.lines_ = {Eigen::Vector2i(0, 1)};
+        path_lines.colors_ = {Vec3(0.05, 0.65, 1.0)};
+        return;
+    }
+
     for (const Vec3 &point : sim.path)
         path_lines.points_.push_back(point + Vec3(0.0, 0.0, -sim.vehicle_config.lidar_height + 0.12));
 
@@ -229,6 +238,10 @@ void runSimulation()
     auto path_lines = makeLineSet();
     auto target_lines = makeLineSet();
     auto steering_lines = makeLineSet();
+
+    updateVehicleLines(sim, *vehicle_lines);
+    updatePathLines(sim, *path_lines);
+    updateDirectionLines(sim, *target_lines, *steering_lines);
 
     vis.AddGeometry(hallway_lines, false);
     vis.AddGeometry(vehicle_lines, false);

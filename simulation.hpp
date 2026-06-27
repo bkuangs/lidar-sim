@@ -58,6 +58,8 @@ inline SimulationState makeSimulation(unsigned int seed = 42)
     sim.lidar.pose = lidarPoseFromVehicle(sim.vehicle, sim.vehicle_config);
     updateObstacleWindow(sim.world, sim.vehicle.x);
     rebuildSceneQueries(sim);
+    sim.scan = scanScene(sim.scene, sim.lidar);
+    sim.plan = planFollowTheGap(sim.scan, sim.planner_config, sim.lidar.maxRange);
     sim.path.push_back(sim.lidar.pose.translation());
     return sim;
 }
