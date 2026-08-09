@@ -1,32 +1,25 @@
 #pragma once
 #include <vector>
-#include <map>
-#include <Eigen/Dense>
-#include <algorithm>
 #include <cmath>
-#include <functional>
-#include "scene.hpp"
+#include <Eigen/Dense>
 #include "lidar.hpp"
 
 using Vec3 = Eigen::Vector3d;
 
+// The follow-the-gap planner only needs a per-ray polar range: it slices by
+// elevation, bins by azimuth, and keeps the nearest range per bin. The full
+// point cloud (world/sensor coords, normals, intensity, per-object hit counts)
+// was only ever consumed by the retired real-time viewer, so it is not built.
 struct ScanPoint
 {
-    Vec3 point_world;
-    Vec3 point_sensor;
-    Vec3 normal_world;
-    double range;
-    double intensity;
     double azimuth;
     double elevation;
-    int object_id;
+    double range;
 };
 
 struct ScanResult
 {
     std::vector<ScanPoint> points;
-    int total_rays = 0;
-    std::map<int, int> hit_counts;
 };
 
 template <typename Intersector>
@@ -35,7 +28,6 @@ ScanResult scanWithIntersector(const Lidar &lidar, Intersector intersect)
     ScanResult scan;
     scan.points.reserve(lidar.azimuthSamples * lidar.elevationSamples);
 
-    // convert scan angles to local ray direction
     auto scanDirection = [](double azimuth, double elevation)
     {
         return Vec3(
@@ -47,23 +39,16 @@ ScanResult scanWithIntersector(const Lidar &lidar, Intersector intersect)
 
     for (int v = 0; v < lidar.elevationSamples; ++v)
     {
-        // scan progress
         double vf = lidar.elevationSamples > 1
                         ? static_cast<double>(v) / (lidar.elevationSamples - 1)
                         : 0.0;
-
-        // elevation angle
         double elevation =
             lidar.minElevation +
             vf * (lidar.maxElevation - lidar.minElevation);
 
         for (int h = 0; h < lidar.azimuthSamples; ++h)
         {
-            ++scan.total_rays;
-
             double hf = static_cast<double>(h) / lidar.azimuthSamples;
-
-            // horizontal angle
             double azimuth =
                 lidar.minAzimuth +
                 hf * (lidar.maxAzimuth - lidar.minAzimuth);
@@ -71,38 +56,15 @@ ScanResult scanWithIntersector(const Lidar &lidar, Intersector intersect)
             Vec3 localDir = scanDirection(azimuth, elevation);
 
             Ray ray;
-            ray.ori = lidar.pose.translation();         // ray starts at lidar pose
-            ray.dir = lidar.pose.rotation() * localDir; // convert local ray direction to world frame
+            ray.ori = lidar.pose.translation();
+            ray.dir = lidar.pose.rotation() * localDir;
 
             Hit hit = intersect(ray);
 
             if (hit.hit && hit.t >= lidar.minRange && hit.t <= lidar.maxRange)
-            {
-                Vec3 point_world = ray.ori + hit.t * ray.dir;
-                Vec3 point_sensor = hit.t * localDir;
-                double intensity = std::clamp(hit.n.dot(-ray.dir), 0.0, 1.0);
-
-                ScanPoint point{
-                    point_world,
-                    point_sensor,
-                    hit.n,
-                    hit.t,
-                    intensity,
-                    azimuth,
-                    elevation,
-                    hit.objId};
-
-                scan.points.push_back(point);
-                ++scan.hit_counts[hit.objId];
-            }
+                scan.points.push_back(ScanPoint{azimuth, elevation, hit.t});
         }
     }
 
     return scan;
-}
-
-inline ScanResult scanScene(const Scene &scene, const Lidar &lidar)
-{
-    return scanWithIntersector(lidar, [&scene](const Ray &ray)
-                               { return scene.intersect(ray); });
 }

@@ -159,6 +159,7 @@ int main(int argc, char **argv)
     std::vector<int> sweep = {10, 25, 50, 100, 200, 400, 800, 1600, 3200};
     unsigned int seed = 42;
     int passes = 3;
+    bool with_buckets = false; // x-buckets is an intermediate ablation, off by default
     std::string csv_path = "scaling.csv";
 
     for (int i = 1; i < argc; ++i)
@@ -169,6 +170,8 @@ int main(int argc, char **argv)
             seed = static_cast<unsigned int>(std::strtoul(next(), nullptr, 10));
         else if (arg == "--passes")
             passes = std::atoi(next());
+        else if (arg == "--with-buckets")
+            with_buckets = true;
         else if (arg == "--csv")
             csv_path = next();
         else
@@ -203,6 +206,7 @@ int main(int argc, char **argv)
 
         // ---- build times ----
         scan_r.build_ms = 0.0; // no acceleration structure
+        if (with_buckets)
         {
             auto t = std::chrono::steady_clock::now();
             bucket.rebuild(ds.static_objects, ds.obstacles);
@@ -221,7 +225,8 @@ int main(int argc, char **argv)
         // ---- warmup ----
         volatile double sink = 0.0;
         sink += queryPass(rays, scan_fn);
-        sink += queryPass(rays, bucket_fn);
+        if (with_buckets)
+            sink += queryPass(rays, bucket_fn);
         sink += queryPass(rays, bvh_fn);
         (void)sink;
 
@@ -236,7 +241,8 @@ int main(int argc, char **argv)
             out.ns_per_ray = out.query_ms * 1e6 / rays.size();
         };
         timeMode(scan_fn, scan_r);
-        timeMode(bucket_fn, buckets_r);
+        if (with_buckets)
+            timeMode(bucket_fn, buckets_r);
         timeMode(bvh_fn, bvh_r);
 
         // ---- correctness gate ----
@@ -255,7 +261,7 @@ int main(int argc, char **argv)
             }
             return m;
         };
-        buckets_r.mismatches = countMismatches(bucket_fn);
+        buckets_r.mismatches = with_buckets ? countMismatches(bucket_fn) : 0;
         bvh_r.mismatches = countMismatches(bvh_fn);
 
         const double bvh_speedup = bvh_r.ns_per_ray > 0 ? scan_r.ns_per_ray / bvh_r.ns_per_ray : 0.0;
@@ -280,7 +286,8 @@ int main(int argc, char **argv)
                 << r.ns_per_ray << ',' << rays.size() << ',' << r.mismatches << '\n';
         };
         row("linear-scan", scan_r);
-        row("x-buckets", buckets_r);
+        if (with_buckets)
+            row("x-buckets", buckets_r);
         row("scene-bvh", bvh_r);
         std::cout << '\n';
         (void)verified;

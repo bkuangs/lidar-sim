@@ -20,7 +20,7 @@
  * frame, so absolute counts and per-obstacle rates are confounded by distance.
  *
  * Usage:
- *   layer2_benchmark [--speed 3.5] [--seeds 8] [--csv]
+ *   layer2_benchmark [--speed 3.5] [--seeds 8] [--csv] [--with-mesh-bvh]
  */
 
 int main(int argc, char **argv)
@@ -29,6 +29,8 @@ int main(int argc, char **argv)
     int seeds = 32;
     bool csv = false;
     bool skip_verify = false;
+    bool with_mesh_bvh = false; // mesh-BVH ablation caps K identically to scene-BVH
+                                // at these N, so it is off by default (opt-in row)
 
     for (int i = 1; i < argc; ++i)
     {
@@ -38,6 +40,8 @@ int main(int argc, char **argv)
             seeds = std::stoi(argv[++i]);
         else if (!std::strcmp(argv[i], "--csv"))
             csv = true;
+        else if (!std::strcmp(argv[i], "--with-mesh-bvh"))
+            with_mesh_bvh = true;
         else if (!std::strcmp(argv[i], "--no-verify"))
             skip_verify = true;
     }
@@ -67,8 +71,10 @@ int main(int argc, char **argv)
         }
     }
 
-    const std::vector<Layer2Mode> modes = {
-        Layer2Mode::TrueBrute, Layer2Mode::MeshBVH, Layer2Mode::SceneBVH};
+    const std::vector<Layer2Mode> modes =
+        with_mesh_bvh
+            ? std::vector<Layer2Mode>{Layer2Mode::TrueBrute, Layer2Mode::MeshBVH, Layer2Mode::SceneBVH}
+            : std::vector<Layer2Mode>{Layer2Mode::TrueBrute, Layer2Mode::SceneBVH};
     const std::vector<double> budgets = {1.0, 1.5, 2.0, 3.0, 5.0, 8.0};
 
     if (csv)

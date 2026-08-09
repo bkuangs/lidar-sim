@@ -58,7 +58,6 @@ struct CostModel
     double brute_ns_per_tri = 3.441;
     double mesh_ns_per_obstacle = 10.32;
     double bvh_base_ns = 550.0; // conservative flat estimate; scene always caps K
-    double bvh_log_ns = 0.0;
     int tris_per_obstacle = 504; // 2 * slices(28) * (stacks(8) + 1)
 
     double costRayNs(Layer2Mode m, int in_view) const
@@ -71,7 +70,9 @@ struct CostModel
         case Layer2Mode::MeshBVH:
             return mesh_ns_per_obstacle * n;
         case Layer2Mode::SceneBVH:
-            return bvh_base_ns + bvh_log_ns * std::log2(static_cast<double>(n));
+            // Modeled flat: the true O(log N) term is unresolvable here (see above)
+            // and scene-BVH always caps K within budget, so the constant suffices.
+            return bvh_base_ns;
         }
         return 0.0;
     }
