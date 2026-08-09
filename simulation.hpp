@@ -1,5 +1,6 @@
 #pragma once
 #include "accelerated_scene.hpp"
+#include "scene_bvh.hpp"
 #include "planner.hpp"
 #include "vehicle.hpp"
 #include <chrono>
@@ -25,6 +26,7 @@ struct SimulationState
     Scene scene;
     std::vector<std::shared_ptr<Geometry>> static_objects;
     XBucketScene bucket_scene;
+    SceneBVH bvh_scene;
     ScanResult scan;
     PlannerOutput plan;
     SimulationMetrics metrics;
@@ -47,6 +49,7 @@ inline void rebuildSceneQueries(SimulationState &sim)
     sim.static_objects = makeHallwayStaticObjects(sim.world);
     sim.scene = makeHallwayScene(sim.world);
     sim.bucket_scene.rebuild(sim.static_objects, sim.world.obstacles);
+    sim.bvh_scene.rebuild(sim.static_objects, sim.world.obstacles);
     sim.scene_revision = sim.world.revision;
 }
 
@@ -82,6 +85,16 @@ inline int verifyAcceleratedQueries(const SimulationState &sim)
     int mismatches = 0;
     constexpr double tolerance = 1e-6;
 
+    auto compare = [&](const Hit &brute, const Hit &accel) {
+        const bool brute_valid = brute.hit && brute.t <= sim.lidar.maxRange;
+        const bool accel_valid = accel.hit && accel.t <= sim.lidar.maxRange;
+        if (brute_valid != accel_valid)
+            return 1;
+        if (brute_valid && (brute.objId != accel.objId || std::abs(brute.t - accel.t) > tolerance))
+            return 1;
+        return 0;
+    };
+
     for (double elevation : {-15.0 * geom::deg, 0.0, 15.0 * geom::deg})
     {
         for (int i = 0; i < 24; ++i)
@@ -89,18 +102,8 @@ inline int verifyAcceleratedQueries(const SimulationState &sim)
             const double azimuth = (2.0 * geom::pi * i) / 24.0;
             const Ray ray = lidarRay(sim.lidar, azimuth, elevation);
             const Hit brute = sim.scene.intersect(ray);
-            const Hit bucket = sim.bucket_scene.intersect(ray, sim.lidar.maxRange);
-
-            const bool brute_valid = brute.hit && brute.t <= sim.lidar.maxRange;
-            const bool bucket_valid = bucket.hit && bucket.t <= sim.lidar.maxRange;
-            if (brute_valid != bucket_valid)
-            {
-                ++mismatches;
-                continue;
-            }
-
-            if (brute_valid && (brute.objId != bucket.objId || std::abs(brute.t - bucket.t) > tolerance))
-                ++mismatches;
+            mismatches += compare(brute, sim.bucket_scene.intersect(ray, sim.lidar.maxRange));
+            mismatches += compare(brute, sim.bvh_scene.intersect(ray, sim.lidar.maxRange));
         }
     }
 
@@ -118,23 +121,32 @@ inline void stepSimulation(SimulationState &sim, double dt)
     sim.lidar.pose = lidarPoseFromVehicle(sim.vehicle, sim.vehicle_config);
 
     const auto scan_start = std::chrono::steady_clock::now();
-    if (sim.query_mode == QueryMode::BruteForce)
+    switch (sim.query_mode)
     {
+    case QueryMode::BruteForce:
         sim.scan = scanScene(sim.scene, sim.lidar);
-    }
-    else
-    {
+        break;
+    case QueryMode::XBuckets:
         sim.scan = scanWithIntersector(
             sim.lidar,
             [&sim](const Ray &ray)
             {
                 return sim.bucket_scene.intersect(ray, sim.lidar.maxRange);
             });
+        break;
+    case QueryMode::SceneBVH:
+        sim.scan = scanWithIntersector(
+            sim.lidar,
+            [&sim](const Ray &ray)
+            {
+                return sim.bvh_scene.intersect(ray, sim.lidar.maxRange);
+            });
+        break;
     }
     const auto scan_end = std::chrono::steady_clock::now();
     sim.metrics.scan_ms = elapsedMs(scan_start, scan_end);
 
-    if (sim.query_mode == QueryMode::XBuckets && sim.frame % 60 == 0)
+    if (sim.query_mode != QueryMode::BruteForce && sim.frame % 60 == 0)
     {
         sim.metrics.verification_mismatches = verifyAcceleratedQueries(sim);
         sim.metrics.accelerator_verified = sim.metrics.verification_mismatches == 0;

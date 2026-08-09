@@ -191,7 +191,7 @@ void printMetrics(const SimulationState &sim)
               << " steer=" << sim.vehicle.steering / geom::deg << "deg"
               << " collisions=" << sim.metrics.collision_count;
 
-    if (sim.query_mode == QueryMode::XBuckets)
+    if (sim.query_mode != QueryMode::BruteForce)
     {
         std::cout << " accel_check="
                   << (sim.metrics.accelerator_verified ? "ok" : "mismatch")
@@ -271,9 +271,8 @@ void runSimulation()
     vis.RegisterKeyCallback(
         GLFW_KEY_M,
         [&sim](open3d::visualization::Visualizer *) {
-            sim.query_mode = sim.query_mode == QueryMode::BruteForce
-                                 ? QueryMode::XBuckets
-                                 : QueryMode::BruteForce;
+            sim.query_mode = static_cast<QueryMode>(
+                (static_cast<int>(sim.query_mode) + 1) % 3);
             std::cout << "query mode: " << queryModeName(sim.query_mode) << '\n';
             return false;
         });

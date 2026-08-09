@@ -9,12 +9,22 @@
 enum class QueryMode
 {
     BruteForce,
-    XBuckets
+    XBuckets,
+    SceneBVH
 };
 
 inline const char *queryModeName(QueryMode mode)
 {
-    return mode == QueryMode::BruteForce ? "brute-force" : "x-buckets";
+    switch (mode)
+    {
+    case QueryMode::BruteForce:
+        return "brute-force";
+    case QueryMode::XBuckets:
+        return "x-buckets";
+    case QueryMode::SceneBVH:
+        return "scene-bvh";
+    }
+    return "unknown";
 }
 
 class XBucketScene
