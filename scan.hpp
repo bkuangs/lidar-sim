@@ -48,7 +48,9 @@ ScanResult scanWithIntersector(const Lidar &lidar, Intersector intersect)
     for (int v = 0; v < lidar.elevationSamples; ++v)
     {
         // scan progress
-        double vf = static_cast<double>(v) / (lidar.elevationSamples - 1);
+        double vf = lidar.elevationSamples > 1
+                        ? static_cast<double>(v) / (lidar.elevationSamples - 1)
+                        : 0.0;
 
         // elevation angle
         double elevation =

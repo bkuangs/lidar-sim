@@ -227,3 +227,26 @@ Validated by `poly_probe.cpp` (16×16 UV spheres, 480 tris each):
 
 Three modes worth showing: **true-brute** (triangle soup), **mesh-BVH** (per-mesh only, scene-level brute — still O(N)), **scene-BVH** (both levels). Both BVH tiers matter.
 
+### Layer 2 results (`layer2.hpp` / `layer2_benchmark` target)
+
+Closed loop lives in `layer2.hpp` (`makeLayer2World` + `runLayer2`); driver `layer2_benchmark.cpp`. High-poly pillars via `meshes.hpp` (`makePillar`, 480 tris @ 28×8). Course: 120 m corridor, **half-width 5 m**, ~72 full-height pillars (widths U(0.25,0.75), random y, along-x spacing U(1.0,2.2)). Each frame: count obstacles in view → baked cost model → afford `K` azimuth rays → trace scene-BVH → follow-the-gap → bicycle model → collision check. All modes trace identical (correct) hits; only `K` differs by mode+budget.
+
+**Metric fix that mattered:** absolute collisions and per-obstacle rates are confounded — a starved/blind mode drives *further per frame*, so it "passes" more obstacles and travels more. Normalise by distance: **collisions per 100 m**.
+
+**Headline (8 seeds, target 3.5 m/s, sweep budget):**
+
+| budget (ms) | true-brute K | true-brute coll/100m | scene-BVH K | scene-BVH coll/100m |
+|---|---|---|---|---|
+| 0.50 | 12 | **6.61** | 361 (cap) | 2.87 |
+| 0.75 | 16 | 5.67 | 361 | 2.87 |
+| 1.00 | 22 | 4.86 | 361 | 2.87 |
+| 1.50 | 32 | 3.88 | 361 | 2.87 |
+| 2.00 | 39 | 2.81 | 361 | 2.87 |
+| 3.00 | 53 | 3.04 | 361 | 2.87 |
+
+- **Monotone starvation curve:** shrinking the budget starves brute (K 39→12), it aliases small pillars, collisions/100m climb 2.8 → 6.6. At a generous budget it converges to the BVH floor (enough rays to resolve pillars).
+- **Scene-BVH is flat at 2.87** regardless of budget — always affords full angular resolution. This floor is the *control-tracking* limit (weaving with a steering-rate-limited bicycle), independent of perception — the clean baseline the accelerator is measured against. The **excess above it is the pure aliasing penalty** bought back by the accelerator.
+- **mesh-BVH == scene-BVH at this N** (≈30 in view): per-mesh AABB culling alone already affords full res, so both pin K=361. Honest finding — the *scene*-level BVH's separate win only emerges at much higher obstacle counts (where scene-level brute's O(N) starves too). The dominant, robust contrast here is **true-brute vs any BVH**.
+
+**Speed axis** is secondary/noisy at this operating point (steering-rate coupling is weak vs the resolution effect); **budget is the clean primary axis** and tells the whole story: faster ray tracing → more rays afforded → fewer collisions.
+
