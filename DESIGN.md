@@ -188,3 +188,30 @@ Rough split: ~65% kept verbatim, ~20% overhauled (orchestration), ~15% new (harn
 ## 12. Progress log
 
 - **2026-08-09:** Headless harness (`harness.hpp` + `benchmark.cpp`, Eigen-only target) and `SceneBVH` (3rd `QueryMode`, correctness-gated) landed. Benchmark confirms identical behavior across modes with BVH lowest latency (seed 42, 300 frames: brute 1.35ms / buckets 1.22ms / BVH 0.94ms mean scan; all verified).
+- **2026-08-09:** Layer 1 scaling benchmark (`scaling.cpp`, `lidar_scaling` target) landed. **Key risk retired.**
+
+### Layer 1 results (seed 42, 4344 rays/pass, 50m corridor, 12-tri cubes / analytic spheres)
+
+| N | brute ns/ray | buckets ns/ray | bvh ns/ray | bvh speedup |
+|---|---|---|---|---|
+| 10 | 126 | 174 | 50 | 2.5× |
+| 50 | 259 | 279 | 69 | 3.7× |
+| 100 | 597 | 334 | 54 | 11.0× |
+| 200 | 973 | 515 | 52 | 18.6× |
+| 400 | 2031 | 1090 | 61 | 33× |
+| 800 | 4887 | 2380 | 70 | 70× |
+| 1600 | 10509 | 7497 | 99 | 106× |
+| 3200 | 23125 | 15866 | 98 | 237× |
+
+Findings:
+- **Brute is O(N); BVH is flat (~O(log N)); buckets grows ~linearly** (∝ local density) and degrades toward brute in dense scenes → BVH is the decisive accelerator.
+- All accelerated modes bit-verified against brute at every N.
+- BVH build cost is negligible (0.006 ms @ N=10 → 1.3 ms @ N=3200), amortizable across a window.
+- The cost ratio needed to push brute to ~8°/ray while BVH stays ≤1°/ray (~7.8×) is exceeded from **N≈100** onward.
+
+### Open decision surfaced by Layer 1 — the Layer 2 operating point
+
+Starving brute at a **realistic ms-scale budget** needs unrealistic N with trivial obstacles (~30k @ 5ms). Options:
+1. Small perception budget (~20µs) at moderate N (~100–200) — legitimate knob, awkward narration.
+2. **High-poly obstacles** (hundreds–thousands of triangles) → realistic ms-budget starves brute at realistic N (~300); also stresses the per-mesh BVH. *(pending decision)*
+
