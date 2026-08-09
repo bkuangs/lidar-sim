@@ -6,3 +6,5 @@ dist/
 /build/
 /docs/
 CODEX.md
+/build*/
+scaling.csv

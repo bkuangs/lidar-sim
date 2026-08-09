@@ -1,5 +1,5 @@
 #pragma once
-#include "hallway.hpp"
+#include "obstacle.hpp"
 #include <algorithm>
 #include <array>
 #include <limits>

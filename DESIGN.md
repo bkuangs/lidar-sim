@@ -146,16 +146,15 @@ Core algorithms are strong and reused verbatim; the work is orchestration overha
 | `vehicle.hpp` | KEEP | bicycle model + steering-rate limit = speed coupling |
 | `scan.hpp` | KEEP ✅ | honors parameterized ray count |
 | `lidar.hpp` | KEEP ✅ | parameterized `(elevation_bands, K_azimuth)` |
-| `meshes.hpp` | NEW ✅ | `makePillar` / `makeUVSphere` high-poly obstacles |
+| `obstacle.hpp` | NEW ✅ | `ObstacleShape` + `ActiveObstacle` POD — the shared type the acceleration structures need, extracted from the old `hallway.hpp` so the core no longer depends on the retired world generator |
+| `meshes.hpp` | NEW ✅ | obstacle factory: `makeCube` (12-tri analytic), `makePillar` / `makeUVSphere` (high-poly) |
 | `layer2.hpp` | NEW ✅ | Layer 2 closed loop (`makeLayer2World` + `runLayer2`) + fitted `CostModel` + scene correctness gate — supersedes the planned `hallway.hpp`/`simulation.hpp` overhauls |
-| `main.cpp` | KEEP (demo only) | not used by benchmarks |
-| `harness.hpp` | NEW ✅ | headless runner |
-| `benchmark.cpp` | NEW ✅ | QueryMode latency demo (closed-loop parity across modes) |
 | `scaling.cpp` | NEW ✅ | Layer 1 latency-vs-N benchmark (`lidar_scaling`), correctness-gated |
 | `calibrate.cpp` | NEW ✅ | fits the Layer 2 cost model on real pillar geometry (R² reported) |
 | `layer2_benchmark.cpp` | NEW ✅ | Layer 2 headline sweep (budget × mode × seeds), per-seed error bars, reach% |
-| `tests.cpp` | KEEP + extend ✅ | SceneBVH equivalence (shared oracle) |
-| `CMakeLists.txt` | TRACKED ✅ | headless suite builds with Eigen only; Open3D optional (guards the `lidar_3d` demo) |
+| `tests.cpp` | REWRITTEN ✅ | asserts the two headline claims directly: Layer 1 (`Scene` linear-scan ≡ `XBucketScene` ≡ `SceneBVH`), Layer 2 scene ≡ triangle-soup (`verifyLayer2Course`) + course determinism; keeps the shared vehicle/planner unit tests |
+| `CMakeLists.txt` | TRACKED ✅ | headless suite builds with **Eigen only** (Open3D dependency fully removed with the demo); `-O2` by default so latency numbers are meaningful and reproduce the calibration |
+| `main.cpp` / `simulation.hpp` / `harness.hpp` / `benchmark.cpp` / `hallway.hpp` | REMOVED ✅ | the old real-time Open3D sim + first headless harness/benchmark stack. Vestigial after the two-layer pivot; deleting them dropped the last Open3D consumer and the dead `HallwayWorld` path. `ActiveObstacle`/`makeCube` were relocated (→ `obstacle.hpp` / `meshes.hpp`) first |
 | `poly_probe.cpp` | REMOVED ✅ | operating-point probe, superseded by `calibrate.cpp` (which fits on real geometry); deleted to drop the duplicated `makeUVSphere` |
 | `visualize.cpp` | REMOVED ✅ | dead standalone PLY viewer — not wired into any benchmark |
 
@@ -163,7 +162,7 @@ Rough split: ~65% kept verbatim, ~20% overhauled (orchestration), ~15% new (harn
 
 ## 9. New components to add
 
-- **Headless harness** — ✅ done (`harness.hpp`, `benchmark.cpp`).
+- **Headless harness** — ✅ done, then **retired** (the standalone `harness.hpp`/`benchmark.cpp` closed-loop parity demo was folded into the two-layer benchmarks and deleted; see §8 / progress log).
 - **Scaling-scene generator** — ✅ done (`makeDenseScene` in `scaling.cpp`).
 - **Layer 1 benchmark exe** — ✅ done (`scaling.cpp`, CSV + correctness gate).
 - **Cost model** — ✅ done, fitted + validated on real geometry (`calibrate.cpp`), baked into `layer2.hpp`.
@@ -187,7 +186,8 @@ Rough split: ~65% kept verbatim, ~20% overhauled (orchestration), ~15% new (harn
 - ✅ **Key risk retired:** scene-BVH's high-N win is real and measured — as a **latency** result in Layer 1 (~246× at N=3200) and as an autonomy result in Layer 2 (true-brute starvation vs flat BVH floor).
 - ✅ Cost constants are no longer machine-guessed: fitted + validated by `calibrate.cpp` and baked for reproducibility (provenance noted in `CostModel`).
 - ✅ Determinism across modes: fixed pre-generated course, seeded independently of the vehicle path; Layer 2 safety scored on the **common finisher set** so every mode faces identical courses.
-- ✅ **Cleanup done:** deleted `visualize.cpp` (dead PLY viewer) and `poly_probe.cpp` (superseded by `calibrate.cpp`, which also removed the duplicated `makeUVSphere`); `CMakeLists.txt` is now tracked and portable (headless suite builds with Eigen only; Open3D is optional and only guards the `lidar_3d` demo).
+- ✅ **Cleanup done:** deleted `visualize.cpp` (dead PLY viewer) and `poly_probe.cpp` (superseded by `calibrate.cpp`, which also removed the duplicated `makeUVSphere`); `CMakeLists.txt` is now tracked and portable.
+- ✅ **Surgical refactor done:** extracted `ActiveObstacle`/`ObstacleShape` → `obstacle.hpp` and `makeCube` → `meshes.hpp` so the core acceleration structures no longer include the old world file, then deleted the entire vestigial old-path stack (`main.cpp`, `simulation.hpp`, `harness.hpp`, `benchmark.cpp`, `hallway.hpp`). Repo is now purely headless/Eigen (Open3D dependency dropped entirely). `tests.cpp` was rewritten to assert the real headline claims instead of the retired real-time path. Verified behavior-preserving: Layer 1 speedup and Layer 2 autonomy numbers unchanged vs pre-refactor baselines; also fixed a latent cmake bug (builds were unoptimized → now `-O2`).
 - **Known limitation (accepted):** the follow-the-gap planner has no stuck-recovery (creep/reverse), so it deadlocks on the hardest courses (~34% BVH reach). Reported honestly via a separate reach% rather than worked around.
 - Fairness of buckets vs BVH build accounting (currently excluded from budget).
 
@@ -199,6 +199,7 @@ Rough split: ~65% kept verbatim, ~20% overhauled (orchestration), ~15% new (harn
 - **2026-08-09:** Added a Layer 2 correctness gate (`verifyLayer2Scene` in `layer2.hpp`): samples rays across poses on the actual pillar course and asserts `SceneBVH` hits match a triangle-soup ground truth (`bruteForceIntersect`, no per-mesh BVH) — checks both scene-level traversal and per-mesh path. `layer2_benchmark` runs it fail-fast before the sweep (3640 rays/seed × 8 seeds, 0 mismatches). Verified the gate has teeth (cross-check against mismatched geometry flags 1525/3640).
 - **2026-08-09:** Cost-model provenance retired the hand-transcribed single-point constants. New `calibrate.cpp` (`calibrate` target) times all three tracers on the **actual pillar geometry** over a grid of `N ∈ {25,50,100,200}` × `stacks ∈ {4,8,16}` (tris 280/504/952) and fits the assumed forms: **brute `ns = 3605 + 3.441·(N·tris)`, R²=0.998**; **mesh `ns = 45.7 + 10.32·N`, R²=0.983**; scene ~flat few-hundred ns (log₂N signal swamped by timing noise, R²=0.67, nonsensical negative intercept). Baked the fitted slopes into `CostModel`; scene modeled as a conservative flat constant (it always caps K within any realistic budget — its real O(log N) scaling is the Layer 1 latency result). Also switched the cost model to count the **total** obstacle set, not just those in view (**choice A**: brute/mesh have no spatial culling, so they test every obstacle on every ray). Net effect: brute cost ~2.4× higher, K constant per run, stronger and cleaner starvation curve.
 - **2026-08-09:** Resolved loose end #3 (reach% variance / stuck-run contamination). `layer2_benchmark` now scores each seed's coll/100m **individually** and reports **mean ± sample std** over the **common finisher set** (seeds every mode completes at that budget → identical courses cross-mode; `n` = its size), and reports **reach%** as a separate first-class outcome. Non-finishing (stuck / frame-capped) runs are excluded from the safety metric instead of being blended into a distance-weighted pool. Default seeds bumped 8 → 32 for statistical power (common `n` ≈ 11 in the clean 1–3 ms band, ~66 s runtime). Surfaced that the follow-the-gap planner legitimately deadlocks on hard courses and that *better perception lowers reach* (coarse brute drives through phantom gaps) — which is precisely why reach% and safety must be reported separately.
+- **2026-08-09:** Surgical de-cruft after a first-principles review. Extracted the one shared type trapped in the old world file (`ActiveObstacle` + `ObstacleShape` → new `obstacle.hpp`) and the analytic `makeCube` factory (→ `meshes.hpp`), repointed the acceleration structures (`scene_bvh.hpp`, `accelerated_scene.hpp`, `layer2.hpp`) at it, and dropped `vehicle.hpp`'s dead `checkCollision(HallwayWorld,…)`. Then deleted the entire vestigial old real-time/first-benchmark stack (`main.cpp`, `simulation.hpp`, `harness.hpp`, `benchmark.cpp`, `hallway.hpp`) — removing the last Open3D consumer, so `CMakeLists.txt` is now Eigen-only. Rewrote `tests.cpp` to assert the actual headline claims (Layer 1 `Scene` ≡ `XBucketScene` ≡ `SceneBVH` over a ray set; Layer 2 scene ≡ triangle-soup via `verifyLayer2Course`; course determinism) instead of the retired hallway/bucket/old-collision path. **Verified behavior-preserving** against pre-refactor baselines: Layer 1 speedup unchanged (old vs new source both ≈260× at N=3200, `-O2`, within run-to-run noise) and Layer 2 autonomy numbers **bit-identical**. Also fixed a latent build bug the diff exposed — the cmake targets carried **no optimization flags** (meaningless for a latency benchmark and wouldn't reproduce the `-O2` calibration); added `-O2` by default.
 
 > **Terminology — two different "brutes."** These are NOT the same baseline:
 > - **Layer 1 `linear-scan`** = the O(N) scene walk (`Scene::intersect` tests the ray against *every* object; each object still uses its own per-mesh BVH / analytic form). Obstacles here are analytic spheres / 12-tri cubes, so per-object cost is trivial — this isolates **scene-level scaling (N vs log N)**. scene-BVH's win here is a pure **top-level-tree / latency** result.

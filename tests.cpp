@@ -1,33 +1,17 @@
-#include "simulation.hpp"
+#include "layer2.hpp"        // Layer 2 world/loop + scene-vs-soup verification
+#include "accelerated_scene.hpp" // XBucketScene / QueryMode for Layer 1 equivalence
+#include "scene.hpp"         // linear-scan reference
+#include "meshes.hpp"
 #include <cassert>
 #include <cmath>
 #include <iostream>
-#include <limits>
 
 bool near(double a, double b, double eps = 1e-9)
 {
     return std::abs(a - b) <= eps;
 }
 
-void testDeterministicHallway()
-{
-    HallwayWorld a = makeHallwayWorld(123);
-    HallwayWorld b = makeHallwayWorld(123);
-    updateObstacleWindow(a, 0.0);
-    updateObstacleWindow(b, 0.0);
-
-    assert(near(a.half_width, b.half_width));
-    assert(near(a.height, b.height));
-    assert(a.obstacles.size() == b.obstacles.size());
-
-    for (size_t i = 0; i < a.obstacles.size(); ++i)
-    {
-        assert(near(a.obstacles[i].x, b.obstacles[i].x));
-        assert((a.obstacles[i].center - b.obstacles[i].center).norm() < 1e-9);
-        assert(a.obstacles[i].shape == b.obstacles[i].shape);
-        assert(a.obstacles[i].object_id == b.obstacles[i].object_id);
-    }
-}
+// --- shared building blocks (still exercised by both layers) -----------------
 
 void testVehicleDynamics()
 {
@@ -70,47 +54,111 @@ void testFollowTheGap()
     assert(near(blocked.speed_command, 0.0));
 }
 
-void testBucketEquivalence()
+// --- Layer 1 claim: accelerators return identical hits to the linear scan ----
+
+void testLayer1Equivalence()
 {
-    SimulationState sim = makeSimulation(99);
-    int mismatches = verifyAcceleratedQueries(sim);
-    assert(mismatches == 0);
+    const double max_range = 50.0;
+
+    std::vector<std::shared_ptr<Geometry>> statics = {
+        std::make_shared<PlaneGeometry>(Vec3(0, 0, 1), Vec3(0, 0, 0), 0),
+        std::make_shared<PlaneGeometry>(Vec3(0, 1, 0), Vec3(0, -3, 0), 1),
+        std::make_shared<PlaneGeometry>(Vec3(0, -1, 0), Vec3(0, 3, 0), 2),
+    };
+
+    std::mt19937 rng(2024);
+    std::uniform_real_distribution<double> y_dist(-2.0, 2.0), size_dist(0.3, 0.9);
+    std::vector<ActiveObstacle> obstacles;
+    for (int i = 0; i < 40; ++i)
+    {
+        const double x = 3.0 + 1.1 * i;
+        const double y = y_dist(rng), size = size_dist(rng), half = size * 0.5;
+        std::shared_ptr<Geometry> g;
+        switch (i % 3)
+        {
+        case 0: g = makeCube(Vec3(x, y, half), size, 10 + i); break;
+        case 1: g = std::make_shared<SphereGeometry>(Vec3(x, y, half), half, 10 + i); break;
+        default: g = makePillar(x, y, half, 3.0, 12, 4, 10 + i); break;
+        }
+        ActiveObstacle o;
+        o.x = x; o.center = Vec3(x, y, half); o.size = size; o.object_id = 10 + i;
+        o.bounds = g->bounds(); o.geometry = g;
+        obstacles.push_back(o);
+    }
+
+    Scene linear; // reference
+    linear.objects = statics;
+    for (const auto &o : obstacles)
+        linear.objects.push_back(o.geometry);
+
+    XBucketScene buckets;
+    buckets.rebuild(statics, obstacles);
+    SceneBVH bvh;
+    bvh.rebuild(statics, obstacles);
+
+    auto valid = [&](const Hit &h) { return h.hit && h.t <= max_range; };
+    auto mismatch = [&](const Hit &a, const Hit &b) {
+        if (valid(a) != valid(b)) return true;
+        return valid(a) && (a.objId != b.objId || std::abs(a.t - b.t) > 1e-6);
+    };
+
+    int bucket_mismatches = 0, bvh_mismatches = 0, rays = 0;
+    for (double ox : {0.0, 12.0, 25.0, 40.0})
+    {
+        Ray ray;
+        ray.ori = Vec3(ox, 0.0, 1.0);
+        for (int a = 0; a < 180; ++a)
+        {
+            const double az = -geom::pi / 2 + geom::pi * a / 179.0;
+            for (double el : {-10.0 * geom::deg, 0.0, 10.0 * geom::deg})
+            {
+                ray.dir = Vec3(std::cos(el) * std::cos(az), std::cos(el) * std::sin(az), std::sin(el));
+                const Hit ref = linear.intersect(ray);
+                bucket_mismatches += mismatch(ref, buckets.intersect(ray, max_range)) ? 1 : 0;
+                bvh_mismatches += mismatch(ref, bvh.intersect(ray, max_range)) ? 1 : 0;
+                ++rays;
+            }
+        }
+    }
+    assert(bucket_mismatches == 0);
+    assert(bvh_mismatches == 0);
+    assert(rays > 0);
 }
 
-void testCollision()
+// --- Layer 2 claim: the scene BVH the sim actually traces == ground truth ----
+
+void testLayer2SceneVerification()
 {
-    HallwayWorld world = makeHallwayWorld(7);
-    world.obstacles.clear();
+    Layer2Config cfg;
+    cfg.seed = 1234;
+    const Layer2Verification v = verifyLayer2Course(cfg);
+    assert(v.rays > 0);
+    assert(v.passed());
+}
 
-    ActiveObstacle obstacle;
-    obstacle.x = 0.0;
-    obstacle.center = Vec3(0.0, 0.0, 0.25);
-    obstacle.size = 0.5;
-    obstacle.object_id = 10;
-    obstacle.shape = ObstacleShape::Cube;
-    obstacle.geometry = makeCube(obstacle.center, obstacle.size, obstacle.object_id);
-    obstacle.bounds = obstacle.geometry->bounds();
-    world.obstacles.push_back(obstacle);
-
-    VehicleConfig config;
-    VehicleState vehicle;
-    assert(checkCollision(world, vehicle, config));
-
-    vehicle.x = 5.0;
-    vehicle.y = 0.0;
-    assert(!checkCollision(world, vehicle, config));
-
-    vehicle.y = world.half_width;
-    assert(checkCollision(world, vehicle, config));
+void testLayer2Determinism()
+{
+    Layer2Config cfg;
+    cfg.seed = 777;
+    const Layer2World a = makeLayer2World(cfg);
+    const Layer2World b = makeLayer2World(cfg);
+    assert(a.obstacles.size() == b.obstacles.size());
+    assert(a.tris_per_obstacle == b.tris_per_obstacle);
+    for (size_t i = 0; i < a.obstacles.size(); ++i)
+    {
+        assert(near(a.obstacles[i].x, b.obstacles[i].x));
+        assert((a.obstacles[i].center - b.obstacles[i].center).norm() < 1e-12);
+        assert(a.obstacles[i].object_id == b.obstacles[i].object_id);
+    }
 }
 
 int main()
 {
-    testDeterministicHallway();
     testVehicleDynamics();
     testFollowTheGap();
-    testBucketEquivalence();
-    testCollision();
+    testLayer1Equivalence();
+    testLayer2SceneVerification();
+    testLayer2Determinism();
 
     std::cout << "All lidar_3d tests passed\n";
     return 0;

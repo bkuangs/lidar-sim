@@ -1,7 +1,7 @@
 #pragma once
 #include "meshes.hpp"
 #include "scene_bvh.hpp"
-#include "hallway.hpp"
+#include "obstacle.hpp"
 #include "planner.hpp"
 #include "scan.hpp"
 #include "vehicle.hpp"

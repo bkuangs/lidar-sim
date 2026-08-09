@@ -5,13 +5,36 @@
 #include <vector>
 
 /**
- * High-poly mesh generators for the Layer 2 course.
+ * Mesh generators shared by the benchmarks.
  *
- * Obstacles are full-height pillars so a horizontal LiDAR slice reliably
+ * Layer 2 obstacles are full-height pillars so a horizontal LiDAR slice reliably
  * detects them regardless of vertical resolution — isolating azimuth aliasing
  * as the only perception variable. High triangle counts make the true
- * triangle-soup brute baseline genuinely expensive (see DESIGN.md).
+ * triangle-soup brute baseline genuinely expensive (see DESIGN.md). `makeCube`
+ * is the low-poly analytic obstacle used by the Layer 1 scaling scenes.
  */
+
+// Axis-aligned cube of edge `size` centered at `center` (12 triangles).
+inline std::shared_ptr<TriangleMeshGeometry> makeCube(
+    const Vec3 &center, double size, int object_id)
+{
+    const double h = size * 0.5;
+    std::vector<Vec3> v = {
+        {center.x() - h, center.y() - h, center.z() - h},
+        {center.x() + h, center.y() - h, center.z() - h},
+        {center.x() + h, center.y() + h, center.z() - h},
+        {center.x() - h, center.y() + h, center.z() - h},
+        {center.x() - h, center.y() - h, center.z() + h},
+        {center.x() + h, center.y() - h, center.z() + h},
+        {center.x() + h, center.y() + h, center.z() + h},
+        {center.x() - h, center.y() + h, center.z() + h},
+    };
+    std::vector<Eigen::Vector3i> t = {
+        {0, 1, 2}, {0, 2, 3}, {4, 6, 5}, {4, 7, 6}, {0, 4, 5}, {0, 5, 1},
+        {1, 5, 6}, {1, 6, 2}, {2, 6, 7}, {2, 7, 3}, {3, 7, 4}, {3, 4, 0},
+    };
+    return std::make_shared<TriangleMeshGeometry>(v, t, object_id);
+}
 
 // Tall cylindrical pillar from z=0 to z=height. Triangles ~= slices*stacks*2 + 2*slices.
 inline std::shared_ptr<TriangleMeshGeometry> makePillar(

@@ -1,5 +1,7 @@
 #include "accelerated_scene.hpp"
+#include "scene.hpp"
 #include "scene_bvh.hpp"
+#include "meshes.hpp"
 #include <chrono>
 #include <cmath>
 #include <cstdlib>

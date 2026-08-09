@@ -1,6 +1,5 @@
 #pragma once
 #include "geometry.hpp"
-#include "hallway.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -94,24 +93,4 @@ inline bool intersectsAABB(const AABB &a, const AABB &b)
     return (a.min().x() <= b.max().x() && a.max().x() >= b.min().x()) &&
            (a.min().y() <= b.max().y() && a.max().y() >= b.min().y()) &&
            (a.min().z() <= b.max().z() && a.max().z() >= b.min().z());
-}
-
-inline bool checkCollision(
-    const HallwayWorld &world,
-    const VehicleState &vehicle,
-    const VehicleConfig &config)
-{
-    const double half_width = 0.5 * config.width;
-    if (vehicle.y - half_width < -world.half_width ||
-        vehicle.y + half_width > world.half_width)
-        return true;
-
-    const AABB vehicle_bounds = vehicleFootprintBounds(vehicle, config);
-    for (const ActiveObstacle &obstacle : world.obstacles)
-    {
-        if (intersectsAABB(vehicle_bounds, obstacle.bounds))
-            return true;
-    }
-
-    return false;
 }
