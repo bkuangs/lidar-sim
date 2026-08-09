@@ -192,6 +192,7 @@ Rough split: ~65% kept verbatim, ~20% overhauled (orchestration), ~15% new (harn
 - **2026-08-09:** Renamed Layer 1's baseline mode `brute-force → linear-scan` (`bvh_vs_bf → bvh_vs_scan`) for honesty — see terminology note below.
 - **2026-08-09:** Added a Layer 2 correctness gate (`verifyLayer2Scene` in `layer2.hpp`): samples rays across poses on the actual pillar course and asserts `SceneBVH` hits match a triangle-soup ground truth (`bruteForceIntersect`, no per-mesh BVH) — checks both scene-level traversal and per-mesh path. `layer2_benchmark` runs it fail-fast before the sweep (3640 rays/seed × 8 seeds, 0 mismatches). Verified the gate has teeth (cross-check against mismatched geometry flags 1525/3640).
 - **2026-08-09:** Cost-model provenance retired the hand-transcribed single-point constants. New `calibrate.cpp` (`calibrate` target) times all three tracers on the **actual pillar geometry** over a grid of `N ∈ {25,50,100,200}` × `stacks ∈ {4,8,16}` (tris 280/504/952) and fits the assumed forms: **brute `ns = 3605 + 3.441·(N·tris)`, R²=0.998**; **mesh `ns = 45.7 + 10.32·N`, R²=0.983**; scene ~flat few-hundred ns (log₂N signal swamped by timing noise, R²=0.67, nonsensical negative intercept). Baked the fitted slopes into `CostModel`; scene modeled as a conservative flat constant (it always caps K within any realistic budget — its real O(log N) scaling is the Layer 1 latency result). Also switched the cost model to count the **total** obstacle set, not just those in view (**choice A**: brute/mesh have no spatial culling, so they test every obstacle on every ray). Net effect: brute cost ~2.4× higher, K constant per run, stronger and cleaner starvation curve.
+- **2026-08-09:** Resolved loose end #3 (reach% variance / stuck-run contamination). `layer2_benchmark` now scores each seed's coll/100m **individually** and reports **mean ± sample std** over the **common finisher set** (seeds every mode completes at that budget → identical courses cross-mode; `n` = its size), and reports **reach%** as a separate first-class outcome. Non-finishing (stuck / frame-capped) runs are excluded from the safety metric instead of being blended into a distance-weighted pool. Default seeds bumped 8 → 32 for statistical power (common `n` ≈ 11 in the clean 1–3 ms band, ~66 s runtime). Surfaced that the follow-the-gap planner legitimately deadlocks on hard courses and that *better perception lowers reach* (coarse brute drives through phantom gaps) — which is precisely why reach% and safety must be reported separately.
 
 > **Terminology — two different "brutes."** These are NOT the same baseline:
 > - **Layer 1 `linear-scan`** = the O(N) scene walk (`Scene::intersect` tests the ray against *every* object; each object still uses its own per-mesh BVH / analytic form). Obstacles here are analytic spheres / 12-tri cubes, so per-object cost is trivial — this isolates **scene-level scaling (N vs log N)**. scene-BVH's win here is a pure **top-level-tree / latency** result.
@@ -242,21 +243,24 @@ Closed loop lives in `layer2.hpp` (`makeLayer2World` + `runLayer2`); driver `lay
 
 **Metric fix that mattered:** absolute collisions and per-obstacle rates are confounded — a starved/blind mode drives *further per frame*, so it "passes" more obstacles and travels more. Normalise by distance: **collisions per 100 m**.
 
-**Headline (8 seeds, target 3.5 m/s, sweep budget; cost model = fitted constants, total-N):**
+**Aggregation fix (loose end #3, resolved):** three problems were bundled together. (1) *No spread* — a single pooled ratio per cell gave no sense of seed-to-seed variance. (2) *Non-finishing runs* — every run ends by finishing (x ≥ 120 m), getting stuck (speed ≈ 0 for 90 frames), or hitting the 6000-frame cap; the old pool blended partial runs in. (3) *Distance-pooling skew* — pooling by total distance let a run that stalled at 40 m distort the ratio. Fixes: score each seed's coll/100m **individually** and report **mean ± sample std** (equal-weighted, no distance pool); score only over the **common finisher set** (seeds *every* mode completes at that budget → identical courses across modes, `n` = its size); and report **reach%** as its own first-class outcome so a stuck run can never masquerade as "safe." Key finding this exposed: the follow-the-gap planner *legitimately* deadlocks (correctly sees a fully-blocked ±90° arc → stops) on the harder courses, and **better perception → lower reach** (coarse brute misses pillars, finds a phantom gap, drives through colliding). That's exactly why reach% must be separated from safety. (Planner has no recovery behavior — creep/reverse is out of scope; the metric is now robust to it.)
 
-| budget (ms) | true-brute K | true-brute coll/100m | scene-BVH K | scene-BVH coll/100m |
-|---|---|---|---|---|
-| 1.00 | 8 | **7.34** | 361 (cap) | 2.87 |
-| 1.50 | 12 | 5.67 | 361 | 2.87 |
-| 2.00 | 16 | 4.82 | 361 | 2.87 |
-| 3.00 | 24 | 3.37 | 361 | 2.87 |
-| 5.00 | 40 | 2.52 | 361 | 2.87 |
-| 8.00 | 64 | 2.66 | 361 | 2.87 |
+**Headline (32 seeds, target 3.5 m/s, sweep budget; cost model = fitted constants, total-N; safety = mean ± std over the n common finishers):**
 
-- **Monotone starvation curve:** shrinking the budget starves brute (K 40→8), it aliases small pillars, collisions/100m climb 2.5 → 7.3 (**2.55× the BVH floor at 1 ms**). At a generous budget it converges to the BVH floor (enough rays to resolve pillars).
-- **Scene-BVH is flat at 2.87** regardless of budget — always affords full angular resolution. This floor is the *control-tracking* limit (weaving with a steering-rate-limited bicycle), independent of perception — the clean baseline the accelerator is measured against. The **excess above it is the pure aliasing penalty** bought back by the accelerator.
+| budget (ms) | brute K | true-brute coll/100m | BVH coll/100m | n | brute reach% | BVH reach% |
+|---|---|---|---|---|---|---|
+| 1.00 | 8 | **6.99 ± 2.70** | 2.80 ± 1.45 | 11 | 100% | 34% |
+| 1.50 | 12 | 5.99 ± 2.33 | 2.80 ± 1.45 | 11 | 100% | 34% |
+| 2.00 | 16 | 4.70 ± 1.80 | 2.80 ± 1.45 | 11 | 100% | 34% |
+| 3.00 | 24 | 3.34 ± 1.60 | 2.80 ± 1.45 | 11 | 94% | 34% |
+| 5.00 | 40 | 2.55 ± 0.98 | 2.89 ± 1.53 | 7 | 66% | 34% |
+| 8.00 | 64 | 2.43 ± 1.32 | 2.83 ± 1.53 | 10 | 53% | 34% |
+
+- **Monotone starvation curve, now with error bars:** shrinking the budget starves brute (K 24→8), it aliases small pillars, collisions/100m climb 3.3 → 7.0. At 1 ms brute is **~2.5× the BVH floor**; with n=11 the standard error is std/√11 ≈ 0.8, so the two means (6.99 vs 2.80) are separated by ~5 SE — a real gap, not seed noise.
+- **Both BVH tiers flat at ~2.80** regardless of budget — always afford full angular resolution. This floor is the *control-tracking* limit (weaving with a steering-rate-limited bicycle), independent of perception — the clean baseline the accelerator is measured against. The **excess above it is the pure aliasing penalty** bought back by the accelerator.
+- **Convergence:** by 3–5 ms brute affords enough rays to resolve the pillars and meets the floor — the expected "enough budget → no penalty" behavior.
+- **reach% is now honest and separate:** brute's reach *falls* (100% → 53%) as budget grows because better perception makes it correctly stop at genuinely blocked spots (safe, but a non-completion); BVH sits at a steady 34% (deadlock is course-driven, not perception-driven). The safety numbers above are scored only on courses **all** modes finished, so this asymmetry cannot leak into the coll/100m comparison. The 5/8 ms rows have smaller `n` (fewer common finishers) — hence their wider/looser figures — but the clean, high-`n` signal is the 1–3 ms band.
 - **mesh-BVH == scene-BVH at this N** (~71 total, ≈30 in view): per-mesh AABB culling alone already affords full res, so both pin K=361. Honest finding — the *scene*-level BVH's separate win only emerges at much higher obstacle counts (where scene-level brute's O(N) starves too). The dominant, robust contrast here is **true-brute vs any BVH**.
-- **Caveat (loose end #3, open):** the top two budgets (5/8 ms) drop to 50% seed-reach and truncate distance, contaminating those two rows — the clean, all-100%-reach signal is the 1–3 ms rows. Error bars / stuck-run handling still pending.
 
 **Speed axis** is secondary/noisy at this operating point (steering-rate coupling is weak vs the resolution effect); **budget is the clean primary axis** and tells the whole story: faster ray tracing → more rays afforded → fewer collisions.
 

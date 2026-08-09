@@ -1,4 +1,5 @@
 #include "layer2.hpp"
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -25,7 +26,7 @@
 int main(int argc, char **argv)
 {
     double speed = 3.5;
-    int seeds = 8;
+    int seeds = 32;
     bool csv = false;
     bool skip_verify = false;
 
@@ -71,48 +72,92 @@ int main(int argc, char **argv)
     const std::vector<double> budgets = {1.0, 1.5, 2.0, 3.0, 5.0, 8.0};
 
     if (csv)
-        std::printf("mode,budget_ms,speed,coll_per_100m,collisions,distance,avg_k,avg_in_view,reached_frac\n");
+        std::printf("mode,budget_ms,speed,coll_per_100m_mean,coll_per_100m_std,n_scored,"
+                    "reach_frac,avg_k,avg_in_view\n");
     else
-        std::printf("%-11s %8s %13s %8s %9s %8s %9s %9s\n",
-                    "mode", "budget", "coll/100m", "coll", "dist", "avg_K", "avg_view", "reach%");
-
-    for (Layer2Mode mode : modes)
     {
-        for (double budget : budgets)
-        {
-            long coll = 0;
-            double dist = 0.0, k_sum = 0.0, view_sum = 0.0;
-            int reached = 0;
+        std::printf("Safety = collisions/100m, mean +/- sample std over the COMMON set of\n"
+                    "seeds every mode completes at that budget (apples-to-apples courses).\n"
+                    "reach%% is each mode's own completion rate and is reported separately:\n"
+                    "stuck / frame-capped seeds are excluded from the safety metric, never\n"
+                    "blended into it. n = size of the common scored set.\n\n");
+        std::printf("%-11s %8s %6s %20s %9s %8s %9s\n",
+                    "mode", "budget", "n", "coll/100m (mean+/-sd)", "reach%", "avg_K", "avg_view");
+    }
 
+    // Run every (mode, seed) once per budget so we can build the common finisher
+    // set and score all modes on identical courses.
+    for (double budget : budgets)
+    {
+        std::vector<std::vector<Layer2Result>> results(modes.size(),
+                                                       std::vector<Layer2Result>(seeds));
+        for (size_t m = 0; m < modes.size(); ++m)
             for (int s = 0; s < seeds; ++s)
             {
                 Layer2Config cfg;
                 cfg.seed = 1000u + static_cast<unsigned>(s);
-                cfg.mode = mode;
+                cfg.mode = modes[m];
                 cfg.target_speed = speed;
                 cfg.budget_ms = budget;
-
-                Layer2Result r = runLayer2(cfg);
-                coll += r.collisions;
-                dist += r.distance;
-                k_sum += r.avg_k;
-                view_sum += r.avg_in_view;
-                reached += r.reached_end ? 1 : 0;
+                results[m][s] = runLayer2(cfg);
             }
 
-            const double per100 = dist > 1.0 ? 100.0 * coll / dist : 0.0;
+        // Common finisher set: seeds reached_end == true for ALL modes.
+        std::vector<int> common;
+        for (int s = 0; s < seeds; ++s)
+        {
+            bool all = true;
+            for (size_t m = 0; m < modes.size(); ++m)
+                all = all && results[m][s].reached_end;
+            if (all)
+                common.push_back(s);
+        }
+
+        for (size_t m = 0; m < modes.size(); ++m)
+        {
+            int reached = 0;
+            double k_sum = 0.0, view_sum = 0.0;
+            for (int s = 0; s < seeds; ++s)
+            {
+                reached += results[m][s].reached_end ? 1 : 0;
+                k_sum += results[m][s].avg_k;
+                view_sum += results[m][s].avg_in_view;
+            }
+            const double reach_frac = 100.0 * reached / seeds;
             const double avg_k = k_sum / seeds;
             const double avg_view = view_sum / seeds;
-            const double reach_frac = 100.0 * reached / seeds;
+
+            // Per-seed safety over the common set (equal-weighted, no distance pool).
+            double mean = 0.0, sd = 0.0;
+            const int n = static_cast<int>(common.size());
+            if (n > 0)
+            {
+                for (int s : common)
+                    mean += results[m][s].collisions_per_100m;
+                mean /= n;
+                if (n > 1)
+                {
+                    for (int s : common)
+                    {
+                        const double d = results[m][s].collisions_per_100m - mean;
+                        sd += d * d;
+                    }
+                    sd = std::sqrt(sd / (n - 1));
+                }
+            }
 
             if (csv)
-                std::printf("%s,%.2f,%.1f,%.4f,%ld,%.0f,%.1f,%.1f,%.0f\n",
-                            layer2ModeName(mode), budget, speed, per100, coll, dist,
-                            avg_k, avg_view, reach_frac);
+                std::printf("%s,%.2f,%.1f,%.4f,%.4f,%d,%.0f,%.1f,%.1f\n",
+                            layer2ModeName(modes[m]), budget, speed, mean, sd, n,
+                            reach_frac, avg_k, avg_view);
+            else if (n > 0)
+                std::printf("%-11s %8.2f %6d %13.2f +/-%4.2f %8.0f%% %8.1f %9.1f\n",
+                            layer2ModeName(modes[m]), budget, n, mean, sd,
+                            reach_frac, avg_k, avg_view);
             else
-                std::printf("%-11s %8.2f %13.3f %8ld %9.0f %8.1f %9.1f %8.0f%%\n",
-                            layer2ModeName(mode), budget, per100, coll, dist,
-                            avg_k, avg_view, reach_frac);
+                std::printf("%-11s %8.2f %6d %20s %8.0f%% %8.1f %9.1f\n",
+                            layer2ModeName(modes[m]), budget, n, "n/a (no common)",
+                            reach_frac, avg_k, avg_view);
         }
         if (!csv)
             std::printf("\n");
