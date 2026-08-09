@@ -111,15 +111,11 @@ struct Layer2Result
     double target_speed = 0.0;
     double budget_ms = 0.0;
     int obstacles_total = 0;
-    int obstacles_passed = 0;
     int collisions = 0;
-    double collision_rate = 0.0;
     double collisions_per_100m = 0.0;
     double distance = 0.0;
-    double min_clearance = std::numeric_limits<double>::infinity();
     double avg_k = 0.0;
     double avg_in_view = 0.0;
-    double avg_speed = 0.0;
     bool reached_end = false;
 };
 
@@ -198,7 +194,6 @@ inline Layer2Result runLayer2(const Layer2Config &cfg)
     lidar.maxRange = cfg.max_range;
 
     std::vector<char> hit(world.obstacles.size(), 0);
-    std::vector<char> passed(world.obstacles.size(), 0);
 
     Layer2Result result;
     result.mode = cfg.mode;
@@ -207,7 +202,7 @@ inline Layer2Result runLayer2(const Layer2Config &cfg)
     result.obstacles_total = static_cast<int>(world.obstacles.size());
 
     const double budget_ns = cfg.budget_ms * 1e6;
-    double sum_k = 0.0, sum_in_view = 0.0, sum_speed = 0.0;
+    double sum_k = 0.0, sum_in_view = 0.0;
     int stuck = 0;
     Vec3 prev(veh.x, veh.y, 0.0);
 
@@ -242,20 +237,10 @@ inline Layer2Result runLayer2(const Layer2Config &cfg)
         for (size_t i = 0; i < world.obstacles.size(); ++i)
         {
             const ActiveObstacle &o = world.obstacles[i];
-            if (std::abs(o.x - veh.x) < 2.0)
-            {
-                const double lateral = std::abs(o.center.y() - veh.y) - o.size * 0.5 - 0.5 * vcfg.width;
-                result.min_clearance = std::min(result.min_clearance, lateral);
-            }
             if (!hit[i] && intersectsAABB(footprint, o.bounds))
             {
                 hit[i] = 1;
                 ++result.collisions;
-            }
-            if (!passed[i] && o.x < veh.x)
-            {
-                passed[i] = 1;
-                ++result.obstacles_passed;
             }
         }
 
@@ -265,7 +250,6 @@ inline Layer2Result runLayer2(const Layer2Config &cfg)
 
         sum_k += k;
         sum_in_view += in_view;
-        sum_speed += veh.speed;
 
         if (veh.speed < 0.05)
         {
@@ -293,15 +277,9 @@ inline Layer2Result runLayer2(const Layer2Config &cfg)
     const int frames = frame + 1;
     result.avg_k = sum_k / frames;
     result.avg_in_view = sum_in_view / frames;
-    result.avg_speed = sum_speed / frames;
-    result.collision_rate = result.obstacles_passed > 0
-                                ? static_cast<double>(result.collisions) / result.obstacles_passed
-                                : 0.0;
     result.collisions_per_100m = result.distance > 1.0
                                      ? 100.0 * result.collisions / result.distance
                                      : 0.0;
-    if (!std::isfinite(result.min_clearance))
-        result.min_clearance = 0.0;
     return result;
 }
 

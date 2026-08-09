@@ -1,5 +1,5 @@
 #include "layer2.hpp"        // Layer 2 world/loop + scene-vs-soup verification
-#include "accelerated_scene.hpp" // XBucketScene / QueryMode for Layer 1 equivalence
+#include "accelerated_scene.hpp" // XBucketScene for Layer 1 equivalence
 #include "scene.hpp"         // linear-scan reference
 #include "meshes.hpp"
 #include <cassert>
