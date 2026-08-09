@@ -154,10 +154,10 @@ Core algorithms are strong and reused verbatim; the work is orchestration overha
 | `scaling.cpp` | NEW ✅ | Layer 1 latency-vs-N benchmark (`lidar_scaling`), correctness-gated |
 | `calibrate.cpp` | NEW ✅ | fits the Layer 2 cost model on real pillar geometry (R² reported) |
 | `layer2_benchmark.cpp` | NEW ✅ | Layer 2 headline sweep (budget × mode × seeds), per-seed error bars, reach% |
-| `poly_probe.cpp` | NEW ✅ | operating-point probe (superseded by `calibrate.cpp` for constants) |
 | `tests.cpp` | KEEP + extend ✅ | SceneBVH equivalence (shared oracle) |
-| `CMakeLists.txt` | ADD (gitignored/local) | headless targets, no Open3D ✅ |
-| `visualize.cpp` | NUKE (pending) | dead standalone PLY viewer — not wired into any benchmark |
+| `CMakeLists.txt` | TRACKED ✅ | headless suite builds with Eigen only; Open3D optional (guards the `lidar_3d` demo) |
+| `poly_probe.cpp` | REMOVED ✅ | operating-point probe, superseded by `calibrate.cpp` (which fits on real geometry); deleted to drop the duplicated `makeUVSphere` |
+| `visualize.cpp` | REMOVED ✅ | dead standalone PLY viewer — not wired into any benchmark |
 
 Rough split: ~65% kept verbatim, ~20% overhauled (orchestration), ~15% new (harness, benchmarks, cost model).
 
@@ -187,7 +187,7 @@ Rough split: ~65% kept verbatim, ~20% overhauled (orchestration), ~15% new (harn
 - ✅ **Key risk retired:** scene-BVH's high-N win is real and measured — as a **latency** result in Layer 1 (~246× at N=3200) and as an autonomy result in Layer 2 (true-brute starvation vs flat BVH floor).
 - ✅ Cost constants are no longer machine-guessed: fitted + validated by `calibrate.cpp` and baked for reproducibility (provenance noted in `CostModel`).
 - ✅ Determinism across modes: fixed pre-generated course, seeded independently of the vehicle path; Layer 2 safety scored on the **common finisher set** so every mode faces identical courses.
-- **Remaining cleanup:** delete `visualize.cpp` (dead PLY viewer); optionally de-dup the pillar/sphere geometry shared by `poly_probe.cpp` and `meshes.hpp`; decide whether to un-gitignore `CMakeLists.txt`.
+- ✅ **Cleanup done:** deleted `visualize.cpp` (dead PLY viewer) and `poly_probe.cpp` (superseded by `calibrate.cpp`, which also removed the duplicated `makeUVSphere`); `CMakeLists.txt` is now tracked and portable (headless suite builds with Eigen only; Open3D is optional and only guards the `lidar_3d` demo).
 - **Known limitation (accepted):** the follow-the-gap planner has no stuck-recovery (creep/reverse), so it deadlocks on the hardest courses (~34% BVH reach). Reported honestly via a separate reach% rather than worked around.
 - Fairness of buckets vs BVH build accounting (currently excluded from budget).
 
@@ -231,7 +231,7 @@ Starving brute at a **realistic ms-scale budget** needs unrealistic N with trivi
 
 Key subtlety: `Scene::intersect` already uses each obstacle's per-mesh BVH, and most rays *miss* a small obstacle's AABB in one cheap test — independent of triangle count. So high-poly only starves brute if "brute" is the **true triangle-soup baseline** (`TriangleMeshGeometry::bruteForceIntersect`, no per-mesh BVH). That is the honest textbook brute-vs-BVH comparison.
 
-Validated by `poly_probe.cpp` (16×16 UV spheres, 480 tris each):
+Validated by `poly_probe.cpp` (16×16 UV spheres, 480 tris each) — *this early probe has since been removed; its role is superseded by `calibrate.cpp`, which fits the same three cost curves on the actual pillar geometry with reported R². The table below is retained as the historical result that first located the operating point:*
 
 | N | total tris | true-brute ns/ray | mesh-BVH ns/ray | scene-BVH ns/ray | K@1ms | K@5ms |
 |---|---|---|---|---|---|---|
