@@ -289,3 +289,117 @@ inline Layer2Result runLayer2(const Layer2Config &cfg)
         result.min_clearance = 0.0;
     return result;
 }
+
+/**
+ * One-time correctness gate for the Layer 2 pillar course.
+ *
+ * The whole thesis rests on "all modes return bit-identical hits; only latency
+ * differs." The sim always traces with the scene BVH, so if SceneBVH ever
+ * disagreed with ground truth over the high-poly pillars (a top-level traversal
+ * bug, a degenerate AABB, a max_distance edge case) the trajectories would be
+ * silently wrong. This verifies SceneBVH against a triangle-soup reference
+ * (`bruteForceIntersect`, no per-mesh BVH) — checking both the scene-level tree
+ * and the per-mesh path end-to-end on the geometry that actually drives Layer 2.
+ */
+struct Layer2Verification
+{
+    int rays = 0;
+    int mismatches = 0;
+    double worst_t_err = 0.0;
+    bool has_example = false;
+    double ex_ref_t = -1.0, ex_bvh_t = -1.0;
+    int ex_ref_obj = -1, ex_bvh_obj = -1;
+    bool passed() const { return mismatches == 0; }
+};
+
+// Ground truth: linear scan over statics (analytic) + triangle-soup over obstacles.
+inline Hit layer2ReferenceHit(const Layer2World &w, const Ray &ray, double max_distance)
+{
+    Hit closest;
+    auto consider = [&](const Hit &h) {
+        if (h.hit && h.t <= max_distance && (!closest.hit || h.t < closest.t))
+            closest = h;
+    };
+    for (const auto &s : w.statics)
+        consider(s->intersect(ray));
+    for (const ActiveObstacle &o : w.obstacles)
+    {
+        auto mesh = std::dynamic_pointer_cast<TriangleMeshGeometry>(o.geometry);
+        consider(mesh ? mesh->bruteForceIntersect(ray) : o.geometry->intersect(ray));
+    }
+    return closest;
+}
+
+inline Layer2Verification verifyLayer2Scene(
+    const Layer2World &w,
+    double max_range,
+    double course_length,
+    double corridor_half_width,
+    unsigned int seed = 7,
+    int pose_samples = 40,
+    int rays_per_pose = 91)
+{
+    Layer2Verification v;
+    std::mt19937 rng(seed);
+    std::uniform_real_distribution<double> x_dist(0.0, course_length);
+    std::uniform_real_distribution<double> y_dist(-corridor_half_width * 0.8, corridor_half_width * 0.8);
+    std::uniform_real_distribution<double> h_dist(-geom::pi, geom::pi);
+    const double tol = 1e-6;
+
+    VehicleConfig vcfg;
+    const int denom = std::max(1, rays_per_pose - 1);
+
+    for (int p = 0; p < pose_samples; ++p)
+    {
+        VehicleState veh;
+        veh.x = x_dist(rng);
+        veh.y = y_dist(rng);
+        veh.heading = h_dist(rng);
+        const Eigen::Isometry3d pose = lidarPoseFromVehicle(veh, vcfg);
+
+        for (int r = 0; r < rays_per_pose; ++r)
+        {
+            const double az = -geom::pi / 2.0 + geom::pi * r / denom;
+            const Vec3 local(std::cos(az), std::sin(az), 0.0);
+            Ray ray;
+            ray.ori = pose.translation();
+            ray.dir = pose.rotation() * local;
+
+            const Hit ref = layer2ReferenceHit(w, ray, max_range);
+            const Hit got = w.bvh.intersect(ray, max_range);
+            ++v.rays;
+
+            const bool rv = ref.hit;
+            const bool gv = got.hit;
+            const bool mismatch =
+                (rv != gv) || (rv && (ref.objId != got.objId || std::abs(ref.t - got.t) > tol));
+            if (mismatch)
+            {
+                ++v.mismatches;
+                if (rv && gv)
+                    v.worst_t_err = std::max(v.worst_t_err, std::abs(ref.t - got.t));
+                if (!v.has_example)
+                {
+                    v.has_example = true;
+                    v.ex_ref_t = rv ? ref.t : -1.0;
+                    v.ex_bvh_t = gv ? got.t : -1.0;
+                    v.ex_ref_obj = rv ? ref.objId : -1;
+                    v.ex_bvh_obj = gv ? got.objId : -1;
+                }
+            }
+        }
+    }
+    return v;
+}
+
+// Convenience: build the course for a config and verify it.
+inline Layer2Verification verifyLayer2Course(const Layer2Config &cfg,
+                                             int pose_samples = 40,
+                                             int rays_per_pose = 91)
+{
+    Layer2World world = makeLayer2World(cfg);
+    return verifyLayer2Scene(world, cfg.max_range, cfg.course_length,
+                             cfg.corridor_half_width, cfg.seed + 7u,
+                             pose_samples, rays_per_pose);
+}
+

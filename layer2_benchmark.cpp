@@ -27,6 +27,7 @@ int main(int argc, char **argv)
     double speed = 3.5;
     int seeds = 8;
     bool csv = false;
+    bool skip_verify = false;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -36,6 +37,33 @@ int main(int argc, char **argv)
             seeds = std::stoi(argv[++i]);
         else if (!std::strcmp(argv[i], "--csv"))
             csv = true;
+        else if (!std::strcmp(argv[i], "--no-verify"))
+            skip_verify = true;
+    }
+
+    // Correctness gate: the sim always traces with the scene BVH, so verify it
+    // returns ground-truth hits over the actual pillar course before trusting
+    // any collision number. Fail fast if not.
+    if (!skip_verify)
+    {
+        for (int s = 0; s < seeds; ++s)
+        {
+            Layer2Config cfg;
+            cfg.seed = 1000u + static_cast<unsigned>(s);
+            const Layer2Verification v = verifyLayer2Course(cfg);
+            if (!v.passed())
+            {
+                std::fprintf(stderr,
+                             "SCENE VERIFICATION FAILED (seed %u): %d/%d rays mismatched, "
+                             "worst |dt|=%.3e; first: ref(obj=%d,t=%.4f) vs bvh(obj=%d,t=%.4f)\n",
+                             cfg.seed, v.mismatches, v.rays, v.worst_t_err,
+                             v.ex_ref_obj, v.ex_ref_t, v.ex_bvh_obj, v.ex_bvh_t);
+                return 1;
+            }
+            if (!csv && s == 0)
+                std::printf("scene verification: %d rays/seed x %d seeds, 0 mismatches (scene-BVH == triangle-soup ground truth) -- PASS\n\n",
+                            v.rays, seeds);
+        }
     }
 
     const std::vector<Layer2Mode> modes = {
