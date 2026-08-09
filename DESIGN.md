@@ -189,10 +189,17 @@ Rough split: ~65% kept verbatim, ~20% overhauled (orchestration), ~15% new (harn
 
 - **2026-08-09:** Headless harness (`harness.hpp` + `benchmark.cpp`, Eigen-only target) and `SceneBVH` (3rd `QueryMode`, correctness-gated) landed. Benchmark confirms identical behavior across modes with BVH lowest latency (seed 42, 300 frames: brute 1.35ms / buckets 1.22ms / BVH 0.94ms mean scan; all verified).
 - **2026-08-09:** Layer 1 scaling benchmark (`scaling.cpp`, `lidar_scaling` target) landed. **Key risk retired.**
+- **2026-08-09:** Renamed Layer 1's baseline mode `brute-force → linear-scan` (`bvh_vs_bf → bvh_vs_scan`) for honesty — see terminology note below.
+
+> **Terminology — two different "brutes."** These are NOT the same baseline:
+> - **Layer 1 `linear-scan`** = the O(N) scene walk (`Scene::intersect` tests the ray against *every* object; each object still uses its own per-mesh BVH / analytic form). Obstacles here are analytic spheres / 12-tri cubes, so per-object cost is trivial — this isolates **scene-level scaling (N vs log N)**. scene-BVH's win here is a pure **top-level-tree / latency** result.
+> - **Layer 2 `true-brute`** = triangle-soup (`TriangleMeshGeometry::bruteForceIntersect`, no per-mesh BVH), O(N·tris). This is the expensive textbook baseline used to *starve the ray budget* in the autonomy loop.
+>
+> Consequence: `linear-scan` (a.k.a. the mesh-BVH tier) can only be beaten by scene-BVH in **latency**, and only diverges at high N — which is why the mesh-BVH-vs-scene-BVH separation can't be reproduced as a *driving* (collision) result (starving it needs undrivable density). The scene-BVH-vs-`linear-scan` win lives here in Layer 1.
 
 ### Layer 1 results (seed 42, 4344 rays/pass, 50m corridor, 12-tri cubes / analytic spheres)
 
-| N | brute ns/ray | buckets ns/ray | bvh ns/ray | bvh speedup |
+| N | linear-scan ns/ray (O(N)) | buckets ns/ray | bvh ns/ray | bvh speedup |
 |---|---|---|---|---|
 | 10 | 126 | 174 | 50 | 2.5× |
 | 50 | 259 | 279 | 69 | 3.7× |
@@ -204,10 +211,10 @@ Rough split: ~65% kept verbatim, ~20% overhauled (orchestration), ~15% new (harn
 | 3200 | 23125 | 15866 | 98 | 237× |
 
 Findings:
-- **Brute is O(N); BVH is flat (~O(log N)); buckets grows ~linearly** (∝ local density) and degrades toward brute in dense scenes → BVH is the decisive accelerator.
-- All accelerated modes bit-verified against brute at every N.
+- **The linear scan is O(N); BVH is flat (~O(log N)); buckets grows ~linearly** (∝ local density) and degrades toward the linear scan in dense scenes → BVH is the decisive accelerator.
+- All accelerated modes bit-verified against the linear-scan reference at every N.
 - BVH build cost is negligible (0.006 ms @ N=10 → 1.3 ms @ N=3200), amortizable across a window.
-- The cost ratio needed to push brute to ~8°/ray while BVH stays ≤1°/ray (~7.8×) is exceeded from **N≈100** onward.
+- The scene-BVH vs linear-scan speedup reaches **~237–246× at N=3200** — the high-N scene-BVH win, expressed as latency.
 
 ### Open decision surfaced by Layer 1 — the Layer 2 operating point
 

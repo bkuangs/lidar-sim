@@ -13,11 +13,18 @@
 /**
  * LAYER 1 — Raytracing scaling benchmark (headless, Open3D-free).
  *
- * Builds a dense obstacle field of N obstacles in a fixed-length corridor and
- * measures, per query mode, the accelerator build time and the per-ray query
- * cost as N scales. This is what retires the key design risk: can brute-force
- * be pushed coarse enough (per-ray cost high enough) that, under a fixed frame
- * budget, it must drop to ~8 deg/ray while BVH stays <=1 deg/ray?
+ * Builds a dense field of N obstacles in a fixed-length corridor and measures,
+ * per query mode, the accelerator build time and the per-ray query cost as N
+ * scales. The baseline "linear-scan" mode is the O(N) scene walk
+ * (Scene::intersect tests the ray against every object; each object still uses
+ * its own per-mesh BVH / analytic form), contrasted against the O(log N)
+ * scene-level SceneBVH. This shows the top-level tree turning an O(N) scan into
+ * O(log N): the per-ray cost stays flat as N grows.
+ *
+ * NOTE: "linear-scan" here is NOT triangle-soup brute force. Obstacles are
+ * analytic spheres / 12-tri cubes, so per-object cost is tiny — this isolates
+ * scene-level scaling (N vs log N), not per-object triangle cost. Layer 2's
+ * "true-brute" is the separate triangle-soup baseline.
  *
  * Output: a table plus a CSV (N, mode, build_ms, query_ms, ns_per_ray, ...).
  */
@@ -33,7 +40,7 @@ struct DenseScene
 {
     std::vector<ActiveObstacle> obstacles;
     std::vector<std::shared_ptr<Geometry>> static_objects;
-    Scene scene; // brute-force reference
+    Scene scene; // linear-scan reference: O(N) walk over all objects (each with its own per-mesh BVH)
 };
 
 std::vector<std::shared_ptr<Geometry>> makeStaticCorridor()
@@ -180,7 +187,7 @@ int main(int argc, char **argv)
               << std::setw(11) << "build_ms"
               << std::setw(11) << "query_ms"
               << std::setw(12) << "ns/ray"
-              << std::setw(12) << "bvh_vs_bf"
+              << std::setw(12) << "bvh_vs_scan"
               << std::setw(10) << "verified" << '\n';
 
     for (int n : sweep)
@@ -190,10 +197,10 @@ int main(int argc, char **argv)
         XBucketScene bucket;
         SceneBVH bvh;
 
-        ModeResult brute, buckets_r, bvh_r;
+        ModeResult scan_r, buckets_r, bvh_r;
 
         // ---- build times ----
-        brute.build_ms = 0.0; // no acceleration structure
+        scan_r.build_ms = 0.0; // no acceleration structure
         {
             auto t = std::chrono::steady_clock::now();
             bucket.rebuild(ds.static_objects, ds.obstacles);
@@ -205,13 +212,13 @@ int main(int argc, char **argv)
             bvh_r.build_ms = msSince(t);
         }
 
-        auto brute_fn = [&](const Ray &r) { return ds.scene.intersect(r); };
+        auto scan_fn = [&](const Ray &r) { return ds.scene.intersect(r); };
         auto bucket_fn = [&](const Ray &r) { return bucket.intersect(r, kMaxRange); };
         auto bvh_fn = [&](const Ray &r) { return bvh.intersect(r, kMaxRange); };
 
         // ---- warmup ----
         volatile double sink = 0.0;
-        sink += queryPass(rays, brute_fn);
+        sink += queryPass(rays, scan_fn);
         sink += queryPass(rays, bucket_fn);
         sink += queryPass(rays, bvh_fn);
         (void)sink;
@@ -226,7 +233,7 @@ int main(int argc, char **argv)
             out.query_ms = msSince(t) / passes;
             out.ns_per_ray = out.query_ms * 1e6 / rays.size();
         };
-        timeMode(brute_fn, brute);
+        timeMode(scan_fn, scan_r);
         timeMode(bucket_fn, buckets_r);
         timeMode(bvh_fn, bvh_r);
 
@@ -236,12 +243,12 @@ int main(int argc, char **argv)
             int m = 0;
             for (const Ray &ray : rays)
             {
-                const Hit bf = ds.scene.intersect(ray);
+                const Hit ref = ds.scene.intersect(ray);
                 const Hit ac = fn(ray);
-                const bool bf_valid = bf.hit && bf.t <= kMaxRange;
+                const bool ref_valid = ref.hit && ref.t <= kMaxRange;
                 const bool a_valid = ac.hit && ac.t <= kMaxRange;
-                if ((bf_valid != a_valid) ||
-                    (bf_valid && (bf.objId != ac.objId || std::abs(bf.t - ac.t) > tol)))
+                if ((ref_valid != a_valid) ||
+                    (ref_valid && (ref.objId != ac.objId || std::abs(ref.t - ac.t) > tol)))
                     ++m;
             }
             return m;
@@ -249,7 +256,7 @@ int main(int argc, char **argv)
         buckets_r.mismatches = countMismatches(bucket_fn);
         bvh_r.mismatches = countMismatches(bvh_fn);
 
-        const double bvh_speedup = bvh_r.ns_per_ray > 0 ? brute.ns_per_ray / bvh_r.ns_per_ray : 0.0;
+        const double bvh_speedup = bvh_r.ns_per_ray > 0 ? scan_r.ns_per_ray / bvh_r.ns_per_ray : 0.0;
         const bool verified = buckets_r.mismatches == 0 && bvh_r.mismatches == 0;
 
         auto row = [&](const char *mode, const ModeResult &r) {
@@ -263,14 +270,14 @@ int main(int argc, char **argv)
                 std::cout << std::setw(12) << std::setprecision(2) << bvh_speedup << "x";
             else
                 std::cout << std::setw(12) << "-";
-            std::cout << std::setw(10) << (std::string(mode) == "brute-force"
+            std::cout << std::setw(10) << (std::string(mode) == "linear-scan"
                                                ? "n/a"
                                                : (r.mismatches == 0 ? "ok" : "MISMATCH"))
                       << '\n';
             csv << n << ',' << mode << ',' << r.build_ms << ',' << r.query_ms << ','
                 << r.ns_per_ray << ',' << rays.size() << ',' << r.mismatches << '\n';
         };
-        row("brute-force", brute);
+        row("linear-scan", scan_r);
         row("x-buckets", buckets_r);
         row("scene-bvh", bvh_r);
         std::cout << '\n';
