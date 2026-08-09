@@ -191,6 +191,7 @@ Rough split: ~65% kept verbatim, ~20% overhauled (orchestration), ~15% new (harn
 - **2026-08-09:** Layer 1 scaling benchmark (`scaling.cpp`, `lidar_scaling` target) landed. **Key risk retired.**
 - **2026-08-09:** Renamed Layer 1's baseline mode `brute-force → linear-scan` (`bvh_vs_bf → bvh_vs_scan`) for honesty — see terminology note below.
 - **2026-08-09:** Added a Layer 2 correctness gate (`verifyLayer2Scene` in `layer2.hpp`): samples rays across poses on the actual pillar course and asserts `SceneBVH` hits match a triangle-soup ground truth (`bruteForceIntersect`, no per-mesh BVH) — checks both scene-level traversal and per-mesh path. `layer2_benchmark` runs it fail-fast before the sweep (3640 rays/seed × 8 seeds, 0 mismatches). Verified the gate has teeth (cross-check against mismatched geometry flags 1525/3640).
+- **2026-08-09:** Cost-model provenance retired the hand-transcribed single-point constants. New `calibrate.cpp` (`calibrate` target) times all three tracers on the **actual pillar geometry** over a grid of `N ∈ {25,50,100,200}` × `stacks ∈ {4,8,16}` (tris 280/504/952) and fits the assumed forms: **brute `ns = 3605 + 3.441·(N·tris)`, R²=0.998**; **mesh `ns = 45.7 + 10.32·N`, R²=0.983**; scene ~flat few-hundred ns (log₂N signal swamped by timing noise, R²=0.67, nonsensical negative intercept). Baked the fitted slopes into `CostModel`; scene modeled as a conservative flat constant (it always caps K within any realistic budget — its real O(log N) scaling is the Layer 1 latency result). Also switched the cost model to count the **total** obstacle set, not just those in view (**choice A**: brute/mesh have no spatial culling, so they test every obstacle on every ray). Net effect: brute cost ~2.4× higher, K constant per run, stronger and cleaner starvation curve.
 
 > **Terminology — two different "brutes."** These are NOT the same baseline:
 > - **Layer 1 `linear-scan`** = the O(N) scene walk (`Scene::intersect` tests the ray against *every* object; each object still uses its own per-mesh BVH / analytic form). Obstacles here are analytic spheres / 12-tri cubes, so per-object cost is trivial — this isolates **scene-level scaling (N vs log N)**. scene-BVH's win here is a pure **top-level-tree / latency** result.
@@ -237,24 +238,25 @@ Three modes worth showing: **true-brute** (triangle soup), **mesh-BVH** (per-mes
 
 ### Layer 2 results (`layer2.hpp` / `layer2_benchmark` target)
 
-Closed loop lives in `layer2.hpp` (`makeLayer2World` + `runLayer2`); driver `layer2_benchmark.cpp`. High-poly pillars via `meshes.hpp` (`makePillar`, 480 tris @ 28×8). Course: 120 m corridor, **half-width 5 m**, ~72 full-height pillars (widths U(0.25,0.75), random y, along-x spacing U(1.0,2.2)). Each frame: count obstacles in view → baked cost model → afford `K` azimuth rays → trace scene-BVH → follow-the-gap → bicycle model → collision check. All modes trace identical (correct) hits; only `K` differs by mode+budget.
+Closed loop lives in `layer2.hpp` (`makeLayer2World` + `runLayer2`); driver `layer2_benchmark.cpp`. High-poly pillars via `meshes.hpp` (`makePillar`, **504 tris @ 28×8** = 2·slices·(stacks+1)). Course: 120 m corridor, **half-width 5 m**, ~71 full-height pillars (widths U(0.25,0.75), random y, along-x spacing U(1.0,2.2)). Each frame: **calibrated** cost model over the **total** obstacle count → afford `K` azimuth rays → trace scene-BVH → follow-the-gap → bicycle model → collision check. All modes trace identical (correct) hits; only `K` differs by mode+budget.
 
 **Metric fix that mattered:** absolute collisions and per-obstacle rates are confounded — a starved/blind mode drives *further per frame*, so it "passes" more obstacles and travels more. Normalise by distance: **collisions per 100 m**.
 
-**Headline (8 seeds, target 3.5 m/s, sweep budget):**
+**Headline (8 seeds, target 3.5 m/s, sweep budget; cost model = fitted constants, total-N):**
 
 | budget (ms) | true-brute K | true-brute coll/100m | scene-BVH K | scene-BVH coll/100m |
 |---|---|---|---|---|
-| 0.50 | 12 | **6.61** | 361 (cap) | 2.87 |
-| 0.75 | 16 | 5.67 | 361 | 2.87 |
-| 1.00 | 22 | 4.86 | 361 | 2.87 |
-| 1.50 | 32 | 3.88 | 361 | 2.87 |
-| 2.00 | 39 | 2.81 | 361 | 2.87 |
-| 3.00 | 53 | 3.04 | 361 | 2.87 |
+| 1.00 | 8 | **7.34** | 361 (cap) | 2.87 |
+| 1.50 | 12 | 5.67 | 361 | 2.87 |
+| 2.00 | 16 | 4.82 | 361 | 2.87 |
+| 3.00 | 24 | 3.37 | 361 | 2.87 |
+| 5.00 | 40 | 2.52 | 361 | 2.87 |
+| 8.00 | 64 | 2.66 | 361 | 2.87 |
 
-- **Monotone starvation curve:** shrinking the budget starves brute (K 39→12), it aliases small pillars, collisions/100m climb 2.8 → 6.6. At a generous budget it converges to the BVH floor (enough rays to resolve pillars).
+- **Monotone starvation curve:** shrinking the budget starves brute (K 40→8), it aliases small pillars, collisions/100m climb 2.5 → 7.3 (**2.55× the BVH floor at 1 ms**). At a generous budget it converges to the BVH floor (enough rays to resolve pillars).
 - **Scene-BVH is flat at 2.87** regardless of budget — always affords full angular resolution. This floor is the *control-tracking* limit (weaving with a steering-rate-limited bicycle), independent of perception — the clean baseline the accelerator is measured against. The **excess above it is the pure aliasing penalty** bought back by the accelerator.
-- **mesh-BVH == scene-BVH at this N** (≈30 in view): per-mesh AABB culling alone already affords full res, so both pin K=361. Honest finding — the *scene*-level BVH's separate win only emerges at much higher obstacle counts (where scene-level brute's O(N) starves too). The dominant, robust contrast here is **true-brute vs any BVH**.
+- **mesh-BVH == scene-BVH at this N** (~71 total, ≈30 in view): per-mesh AABB culling alone already affords full res, so both pin K=361. Honest finding — the *scene*-level BVH's separate win only emerges at much higher obstacle counts (where scene-level brute's O(N) starves too). The dominant, robust contrast here is **true-brute vs any BVH**.
+- **Caveat (loose end #3, open):** the top two budgets (5/8 ms) drop to 50% seed-reach and truncate distance, contaminating those two rows — the clean, all-100%-reach signal is the 1–3 ms rows. Error bars / stuck-run handling still pending.
 
 **Speed axis** is secondary/noisy at this operating point (steering-rate coupling is weak vs the resolution effect); **budget is the clean primary axis** and tells the whole story: faster ray tracing → more rays afforded → fewer collisions.
 

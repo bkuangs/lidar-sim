@@ -68,7 +68,7 @@ int main(int argc, char **argv)
 
     const std::vector<Layer2Mode> modes = {
         Layer2Mode::TrueBrute, Layer2Mode::MeshBVH, Layer2Mode::SceneBVH};
-    const std::vector<double> budgets = {0.5, 0.75, 1.0, 1.5, 2.0, 3.0};
+    const std::vector<double> budgets = {1.0, 1.5, 2.0, 3.0, 5.0, 8.0};
 
     if (csv)
         std::printf("mode,budget_ms,speed,coll_per_100m,collisions,distance,avg_k,avg_in_view,reached_frac\n");

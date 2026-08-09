@@ -41,14 +41,25 @@ inline const char *layer2ModeName(Layer2Mode m)
     return "unknown";
 }
 
-// Cost per ray (ns), baked from poly_probe.cpp so Layer 2 is machine-independent.
+// Cost per ray (ns). Fitted on the ACTUAL pillar geometry by calibrate.cpp
+// (seed 42, macOS / clang -O2, 2026-08-09) and baked here (not measured live)
+// for machine-independent reproducibility:
+//   brute: ns = 3605 + 3.441 * (N*tris)   R2=0.998   (triangle soup, no culling)
+//   mesh:  ns = 45.7  + 10.32 * N         R2=0.983   (O(N) object walk)
+//   scene: ~a few-hundred ns, ~flat; the log2(N) signal is swamped by timing
+//          noise (R2=0.67, nonsensical negative intercept) because scene-BVH is
+//          so cheap. It always caps K within any realistic budget, so it is
+//          modeled as a conservative constant; its true O(log N) scaling is the
+//          Layer 1 (latency) result, not something this budget can resolve.
+// The additive intercepts are dropped (negligible vs the slope term at Layer 2's
+// operating point: brute's 3605 ns is ~3% of 128k ns/ray at N=72, tris=504).
 struct CostModel
 {
-    double brute_ns_per_tri = 4.40;    // 211416 ns @ 100 obstacles * 480 tris
-    double mesh_ns_per_obstacle = 9.3; // per-mesh BVH, scene-level brute
-    double bvh_base_ns = 0.0;
-    double bvh_log_ns = 12.0; // ~O(log N) traversal
-    int tris_per_obstacle = 480;
+    double brute_ns_per_tri = 3.441;
+    double mesh_ns_per_obstacle = 10.32;
+    double bvh_base_ns = 550.0; // conservative flat estimate; scene always caps K
+    double bvh_log_ns = 0.0;
+    int tris_per_obstacle = 504; // 2 * slices(28) * (stacks(8) + 1)
 
     double costRayNs(Layer2Mode m, int in_view) const
     {
@@ -204,13 +215,16 @@ inline Layer2Result runLayer2(const Layer2Config &cfg)
     int frame = 0;
     for (; frame < cfg.max_frames; ++frame)
     {
-        // obstacles currently in the brute working set (window ahead + a little behind)
+        // in_view is reported only; the cost model counts the TOTAL obstacle set
+        // because brute/mesh have no spatial culling — they test every obstacle in
+        // the scene on every ray, regardless of what is currently in view. (Choice A.)
         int in_view = 0;
         for (const ActiveObstacle &o : world.obstacles)
             if (o.x >= veh.x - cfg.view_behind && o.x <= veh.x + cfg.max_range)
                 ++in_view;
 
-        const double cost_ray = cost.costRayNs(cfg.mode, in_view);
+        const int n_cost = static_cast<int>(world.obstacles.size());
+        const double cost_ray = cost.costRayNs(cfg.mode, n_cost);
         int k = static_cast<int>(std::lround(budget_ns / std::max(1.0, cost_ray)));
         k = std::clamp(k, cfg.k_min, cfg.k_max);
 
