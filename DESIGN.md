@@ -211,7 +211,19 @@ Findings:
 
 ### Open decision surfaced by Layer 1 — the Layer 2 operating point
 
-Starving brute at a **realistic ms-scale budget** needs unrealistic N with trivial obstacles (~30k @ 5ms). Options:
-1. Small perception budget (~20µs) at moderate N (~100–200) — legitimate knob, awkward narration.
-2. **High-poly obstacles** (hundreds–thousands of triangles) → realistic ms-budget starves brute at realistic N (~300); also stresses the per-mesh BVH. *(pending decision)*
+Starving brute at a **realistic ms-scale budget** needs unrealistic N with trivial obstacles (~30k @ 5ms). **Resolved: high-poly obstacles + a true triangle-soup brute baseline.**
+
+Key subtlety: `Scene::intersect` already uses each obstacle's per-mesh BVH, and most rays *miss* a small obstacle's AABB in one cheap test — independent of triangle count. So high-poly only starves brute if "brute" is the **true triangle-soup baseline** (`TriangleMeshGeometry::bruteForceIntersect`, no per-mesh BVH). That is the honest textbook brute-vs-BVH comparison.
+
+Validated by `poly_probe.cpp` (16×16 UV spheres, 480 tris each):
+
+| N | total tris | true-brute ns/ray | mesh-BVH ns/ray | scene-BVH ns/ray | K@1ms | K@5ms |
+|---|---|---|---|---|---|---|
+| 100 | 48k | 211,416 | 977 | 75 | 5 | **24** |
+| 200 | 96k | 425,941 | 1834 | 75 | 2 | 12 |
+| 400 | 192k | 884,187 | 3557 | 99 | 1 | 6 |
+
+**Locked Layer 2 operating point:** ~100 high-poly obstacles in a 50 m corridor, **5 ms perception budget** → true-brute ≈ 8°/ray (24 rays, aliases ~half of 0.25–0.75 m obstacles); scene-BVH capped at full res (≤1°/ray). Realistic obstacle count, realistic budget, clean starvation.
+
+Three modes worth showing: **true-brute** (triangle soup), **mesh-BVH** (per-mesh only, scene-level brute — still O(N)), **scene-BVH** (both levels). Both BVH tiers matter.
 
