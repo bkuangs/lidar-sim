@@ -27,9 +27,6 @@ struct Hit
 {
     bool hit = false;
     double t = -1.0;
-    Vec3 p = Vec3::Zero();
-    Vec3 n = Vec3::Zero();
-    double intensity = 0.0;
     int objId = -1;
 };
 
@@ -87,7 +84,6 @@ class Geometry
 public:
     virtual ~Geometry() = default;
     virtual Hit intersect(const Ray &ray) const = 0; // "= 0" -> pure virtual function, derived classes MUST override
-    virtual bool hasFiniteBounds() const { return false; }
     virtual AABB bounds() const
     {
         AABB bbox;
@@ -107,8 +103,6 @@ public:
 
     Hit intersect(const Ray &ray) const override
     {
-        Hit hit;
-
         Vec3 v = ray.ori - center_;
 
         double a = ray.dir.dot(ray.dir);
@@ -123,15 +117,8 @@ public:
         if (t <= geom::Epsilon)
             return Hit{};
 
-        Vec3 p = ray.ori + t * ray.dir;
-        Vec3 n = (p - center_).normalized();
-
-        hit = Hit{true, t, p, n, 1.0, objId_};
-
-        return hit;
+        return Hit{true, t, objId_};
     }
-
-    bool hasFiniteBounds() const override { return true; }
 
     AABB bounds() const override
     {
@@ -158,8 +145,6 @@ public:
 
     Hit intersect(const Ray &ray) const override
     {
-        Hit hit;
-
         double denominator = ray.dir.dot(normal_);
         if (std::abs(denominator) < geom::Epsilon)
             return Hit{};
@@ -168,15 +153,7 @@ public:
         if (t <= geom::Epsilon)
             return Hit{};
 
-        Vec3 hitP = ray.ori + t * ray.dir;
-
-        Vec3 normal = normal_;
-        if (normal.dot(ray.dir) > 0.0)
-            normal = -normal;
-
-        hit = Hit{true, t, hitP, normal, 1.0, objId_};
-
-        return hit;
+        return Hit{true, t, objId_};
     }
 
 private:
@@ -209,8 +186,6 @@ public:
         return closest;
     }
 
-    bool hasFiniteBounds() const override { return true; }
-
     AABB bounds() const override
     {
         AABB bbox;
@@ -221,6 +196,7 @@ public:
 
         return bbox;
     }
+
 
     Hit bruteForceIntersect(const Ray &ray) const
     {
@@ -548,12 +524,7 @@ private:
         if (t <= geom::Epsilon)
             return Hit{};
 
-        const Vec3 hitP = ray.ori + t * ray.dir;
-        Vec3 normal = edge1.cross(edge2).normalized();
-        if (normal.dot(ray.dir) > 0.0)
-            normal = -normal;
-
-        return Hit{true, t, hitP, normal, 1.0, p.objId};
+        return Hit{true, t, p.objId};
     }
 
     std::vector<Vec3> vertices_;

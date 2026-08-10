@@ -4,6 +4,10 @@ node_modules/
 dist/
 .vscode/
 /build/
-/docs/
 CODEX.md
-CMakeLists.txt
+/build*/
+scaling.csv
+/.venv/
+/plots/*.csv
+layer2.csv
+/docs/

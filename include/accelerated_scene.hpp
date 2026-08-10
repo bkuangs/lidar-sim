@@ -1,21 +1,10 @@
 #pragma once
-#include "hallway.hpp"
+#include "obstacle.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
 #include <memory>
 #include <vector>
-
-enum class QueryMode
-{
-    BruteForce,
-    XBuckets
-};
-
-inline const char *queryModeName(QueryMode mode)
-{
-    return mode == QueryMode::BruteForce ? "brute-force" : "x-buckets";
-}
 
 class XBucketScene
 {
