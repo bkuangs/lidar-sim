@@ -153,6 +153,7 @@ Core algorithms are strong and reused verbatim; the work is orchestration overha
 | `calibrate.cpp` | NEW ✅ | fits the Layer 2 cost model on real pillar geometry (R² reported) |
 | `layer2_benchmark.cpp` | NEW ✅ | Layer 2 headline sweep (budget × mode × seeds), per-seed error bars, reach% |
 | `tests.cpp` | REWRITTEN ✅ | asserts the two headline claims directly: Layer 1 (`Scene` linear-scan ≡ `XBucketScene` ≡ `SceneBVH`), Layer 2 scene ≡ triangle-soup (`verifyLayer2Course`) + course determinism; keeps the shared vehicle/planner unit tests |
+| `plot_results.py` | NEW ✅ | the only non-C++ piece: runs both binaries, **saves** their CSVs, and renders the three headline PNGs (Layer 1 ns/ray-vs-N; Layer 2 collisions/100m-vs-budget; Layer 2 avg-K-vs-budget). Reads CSV as the source of truth; `--no-run` replots saved CSVs. matplotlib-only, in a gitignored `.venv`; outputs to gitignored `plots/` |
 | `CMakeLists.txt` | TRACKED ✅ | headless suite builds with **Eigen only** (Open3D dependency fully removed with the demo); `-O2` by default so latency numbers are meaningful and reproduce the calibration |
 | `main.cpp` / `simulation.hpp` / `harness.hpp` / `benchmark.cpp` / `hallway.hpp` | REMOVED ✅ | the old real-time Open3D sim + first headless harness/benchmark stack. Vestigial after the two-layer pivot; deleting them dropped the last Open3D consumer and the dead `HallwayWorld` path. `ActiveObstacle`/`makeCube` were relocated (→ `obstacle.hpp` / `meshes.hpp`) first |
 | `poly_probe.cpp` | REMOVED ✅ | operating-point probe, superseded by `calibrate.cpp` (which fits on real geometry); deleted to drop the duplicated `makeUVSphere` |
@@ -193,6 +194,7 @@ Rough split: ~65% kept verbatim, ~20% overhauled (orchestration), ~15% new (harn
 
 ## 12. Progress log
 
+- **2026-08-09:** Added `plot_results.py` — the first visual output. The benchmark stays headless (no C++ render deps); this script runs `lidar_scaling` and `layer2_benchmark --csv`, **persists** both CSVs (Layer 2 numbers were previously stdout-only and lost on exit), and renders the three headline figures: (1) Layer 1 ns/ray vs N — the O(N) scan blows up while the scene-BVH stays flat; (2) Layer 2 collisions/100m vs per-frame budget with ±std bands — the accelerator crashes far less at a starved budget; (3) Layer 2 avg-K vs budget — the mechanism, the BVH affords far more rays per ms. CSV is the source of truth (`--no-run` replots without re-running). matplotlib lives in a gitignored `.venv`; CSVs+PNGs land in a gitignored `plots/`.
 - **2026-08-09:** Headless harness (`harness.hpp` + `benchmark.cpp`, Eigen-only target) and `SceneBVH` (3rd `QueryMode`, correctness-gated) landed. Benchmark confirms identical behavior across modes with BVH lowest latency (seed 42, 300 frames: brute 1.35ms / buckets 1.22ms / BVH 0.94ms mean scan; all verified).
 - **2026-08-09:** Layer 1 scaling benchmark (`scaling.cpp`, `lidar_scaling` target) landed. **Key risk retired.**
 - **2026-08-09:** Renamed Layer 1's baseline mode `brute-force → linear-scan` (`bvh_vs_bf → bvh_vs_scan`) for honesty — see terminology note below.
