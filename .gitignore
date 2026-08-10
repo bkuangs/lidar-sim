@@ -4,7 +4,6 @@ node_modules/
 dist/
 .vscode/
 /build/
-/docs/
 CODEX.md
 /build*/
 scaling.csv

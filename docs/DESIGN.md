@@ -136,6 +136,19 @@ Ratio `K_bvh / K_brute = (α + β·N) / (α + γ·log2 N)` grows ~`N/log N`. Cho
 
 Core algorithms are strong and reused verbatim; the work is orchestration overhaul + additive benchmark pieces.
 
+**Directory layout** (restructured 2026-08-09 — was previously flat at root):
+
+```
+include/      header-only core (all .hpp below) — carried by the CMake INTERFACE target `lidar3d`
+benchmarks/   scaling.cpp, calibrate.cpp, layer2_benchmark.cpp
+tests/        tests.cpp
+tools/        plot_results.py
+docs/         DESIGN.md, project-outline.md
+README.md · CMakeLists.txt · .gitignore
+```
+
+Local `#include "foo.hpp"` lines are unchanged: all headers share `include/`, which is on the compile include path, so intra-header and driver includes still resolve.
+
 | File | Verdict | Notes |
 |---|---|---|
 | `geometry.hpp` | KEEP as-is | primitives, per-mesh BVH, Möller–Trumbore, SAH, AABB slab; `bruteForceIntersect` = triangle-soup ground truth |
@@ -193,6 +206,8 @@ Rough split: ~65% kept verbatim, ~20% overhauled (orchestration), ~15% new (harn
 - Fairness of buckets vs BVH build accounting (currently excluded from budget).
 
 ## 12. Progress log
+
+- **2026-08-09:** Restructured the repo from a flat root into `include/` (header-only core), `benchmarks/` (the three driver `.cpp`), `tests/`, `tools/` (`plot_results.py`), and `docs/` (this file + the original outline). Moved with `git mv` to preserve history. CMake now exposes an INTERFACE target `lidar3d` carrying the `include/` path + Eigen, which every executable links — so no `#include` line changed (all headers still share one directory on the include path). Rewrote the stale README (it still claimed Open3D/GPU/real-time) to describe the actual headless two-layer benchmark, the layout, and the build/plot commands. Verified end-to-end after the move: full cmake build, `lidar_tests` pass, and the plot pipeline all green.
 
 - **2026-08-09:** Added `plot_results.py` — the first visual output. The benchmark stays headless (no C++ render deps); this script runs `lidar_scaling` and `layer2_benchmark --csv`, **persists** both CSVs (Layer 2 numbers were previously stdout-only and lost on exit), and renders the three headline figures: (1) Layer 1 ns/ray vs N — the O(N) scan blows up while the scene-BVH stays flat; (2) Layer 2 collisions/100m vs per-frame budget with ±std bands — the accelerator crashes far less at a starved budget; (3) Layer 2 avg-K vs budget — the mechanism, the BVH affords far more rays per ms. CSV is the source of truth (`--no-run` replots without re-running). matplotlib lives in a gitignored `.venv`; CSVs+PNGs land in a gitignored `plots/`.
 - **2026-08-09:** Headless harness (`harness.hpp` + `benchmark.cpp`, Eigen-only target) and `SceneBVH` (3rd `QueryMode`, correctness-gated) landed. Benchmark confirms identical behavior across modes with BVH lowest latency (seed 42, 300 frames: brute 1.35ms / buckets 1.22ms / BVH 0.94ms mean scan; all verified).

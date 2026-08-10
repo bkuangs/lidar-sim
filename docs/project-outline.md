@@ -1,5 +1,10 @@
 # Follow-The-Gap LiDAR Collision Avoidance Benchmark
 
+> **Historical.** This is the *original* project outline, which proposed a
+> visual Open3D autonomy demo. The project pivoted to a headless two-layer
+> benchmark; the Open3D/visual direction was dropped. Kept for provenance —
+> see [`DESIGN.md`](DESIGN.md) for the current architecture and rationale.
+
 ## Problem Statement
 
 How might we build a visually compelling 3D LiDAR simulation where an Ackermann-style vehicle avoids randomized hallway obstacles using follow-the-gap, while comparing reaction latency between brute-force and accelerated scene queries?

@@ -18,13 +18,20 @@ add_compile_options(-O2)
 
 enable_testing()
 
-add_executable(lidar_tests tests.cpp)
-add_executable(lidar_scaling scaling.cpp)     # Layer 1: latency vs obstacle count
-add_executable(calibrate calibrate.cpp)       # fits the Layer 2 cost model
-add_executable(layer2_benchmark layer2_benchmark.cpp) # Layer 2: autonomy vs budget
+# Header-only core: every ray-tracing / scene / vehicle / benchmark header lives
+# under include/. This INTERFACE target carries that include path plus Eigen so
+# each executable just links `lidar3d`.
+add_library(lidar3d INTERFACE)
+target_include_directories(lidar3d INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(lidar3d INTERFACE Eigen3::Eigen)
+
+add_executable(lidar_tests      tests/tests.cpp)
+add_executable(lidar_scaling    benchmarks/scaling.cpp)          # Layer 1: latency vs obstacle count
+add_executable(calibrate        benchmarks/calibrate.cpp)        # fits the Layer 2 cost model
+add_executable(layer2_benchmark benchmarks/layer2_benchmark.cpp) # Layer 2: autonomy vs budget
 
 foreach(tgt lidar_tests lidar_scaling calibrate layer2_benchmark)
-    target_link_libraries(${tgt} PRIVATE Eigen3::Eigen)
+    target_link_libraries(${tgt} PRIVATE lidar3d)
 endforeach()
 
 add_test(NAME lidar_tests COMMAND lidar_tests)
