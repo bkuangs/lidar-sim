@@ -8,6 +8,6 @@ CODEX.md
 /build*/
 scaling.csv
 /.venv/
-/plots/
+/plots/*.csv
 layer2.csv
 /docs/
