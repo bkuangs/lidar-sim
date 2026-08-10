@@ -1,82 +1,66 @@
-# lidar_3d — BVH-accelerated LiDAR vs brute force
+# 3D LiDAR Simulator
 
-A **headless** C++/Eigen benchmark that answers one question: *does a BVH
-acceleration structure make an autonomous vehicle measurably safer, not just
-faster?* A follow-the-gap vehicle drives a randomized pillar corridor, scanning
-with a simulated 3D LiDAR. The same (correct) ray hits feed every mode — what
-differs is how many rays each mode can **afford** under a fixed per-frame
-compute budget.
+After learning about ray tracing in computer graphics, particularly acceleration data structures (BVHs),
+I was curious whether applying the same optimization to LiDAR sensors could make an 
+autonomous vehicle measurably safer under time constraint, given their underlying similarities.  
 
-No GPU, no viewer, no external deps beyond Eigen. Results come out as CSV and a
-few plots.
+**Scenario:** A car running basic follow-the-gap obstacle avoidance drives down a corridor 
+with randomized pillar spawns, scanning with a simulated, ray-traced 3D LiDAR. We will measure 
+how many rays each mode (brute force vs. acceleration) can afford under a fixed, per-frame compute budget.
 
-## The two layers
+## Comparison
 
-**Layer 1 — latency vs scene size** (`lidar_scaling`). Trace a fixed ray set
-against a corridor of `N` obstacles and measure ns/ray as `N` grows. A brute
+We compare across 2 verticals:
+
+**1. Latency vs. scene size:** Trace a fixed ray set
+against a corridor of `N` obstacles and measure nanosec/ray as `N` grows. A brute force
 `O(N)` scene walk climbs linearly; the scene-BVH `O(log N)` stays flat. Every
 BVH result is correctness-gated against the linear scan (0 mismatches).
 
-**Layer 2 — autonomy under a frame budget** (`layer2_benchmark`). Give each
-frame a fixed compute budget (ms). A calibrated cost model converts that budget
-into `K` = how many azimuth rays the mode can cast. Starve brute force and it
-aliases thin pillars and crashes more; the BVH always affords full angular
-resolution. The headline metric is **collisions per 100 m** vs budget. All modes
-trace identical, verified hits — only `K` differs.
+**2. Autonomy at a budget:**. Give each
+frame a fixed compute budget (e.g. 0.5 ms). A calibrated cost model converts that budget
+into `K` = how many azimuth rays the mode can cast. The hypothesis is that under severe constraint, 
+brute force cannot generate a clear picture fast enough and crashes more, while BVH always affords full angular
+resolution. We will use collisions per 100 m as our metric.  
 
-The link between them is a **cost model** fitted on the real pillar geometry
-(`calibrate`, R² reported), baked into `include/layer2.hpp`.
+### Cost Model
 
-## Layout
+We use a **cost model** measured in nanoseconds per ray (ns/ray) to compare performance. The key idea is that for each ray, its job is to walk and find the nearest surface it hits. The nearest hit is what the LiDAR reports as the range for that direction. Brute force finds it by testing the ray against every triangle in the scene; BVH uses bounding boxes to take shortcuts and not have to check large areas that are empty. Thus, we expect its 
+ns/ray is to be much shorter.
 
-```
-include/      header-only core: ray tracing, BVH, scenes, LiDAR, vehicle, planner, Layer 2
-benchmarks/   the driver executables (scaling, calibrate, layer2_benchmark)
-tests/        correctness + determinism gates
-tools/        plot_results.py — runs the binaries, saves CSVs, renders the plots
-docs/         DESIGN.md (the single source of truth) + the original project outline
-```
-
-## Build & run
-
-Requires CMake ≥ 3.18, a C++17 compiler, and Eigen3.
+## Build & Run
 
 ```bash
-cmake -S . -B build          # add -DCMAKE_PREFIX_PATH=/opt/homebrew on macOS/brew
+cmake -S . -B build
 cmake --build build
 ```
 
 Then:
 
 ```bash
-./build/lidar_tests                    # all correctness + determinism gates
-./build/lidar_scaling                  # Layer 1 table + scaling.csv
-./build/calibrate                      # refit the cost model (prints R²)
-./build/layer2_benchmark               # Layer 2 sweep (budget x mode x seeds)
+./build/lidar_tests
+./build/lidar_scaling         # Latency/scaling comparison
+./build/calibrate             # refit the cost model (prints R²)
+./build/layer2_benchmark
 ```
-
-Useful flags: `layer2_benchmark --seeds 32 --speed 3.5 --csv`,
-`--with-mesh-bvh` (opt-in ablation), `--no-verify` (skip the scene gate);
-`lidar_scaling --with-buckets` (opt-in Layer 1 intermediate mode).
 
 ## Plots
 
-The C++ stays headless; a small Python script turns the CSVs into figures.
+A small Python script to generate plots:
 
 ```bash
 python3 -m venv .venv
 ./.venv/bin/pip install matplotlib
 ./.venv/bin/python tools/plot_results.py            # default 32 seeds -> plots/
 ./.venv/bin/python tools/plot_results.py --no-run   # replot saved CSVs
-```
+```  
 
-Outputs (in `plots/`, gitignored):
+### Crash Safety 
+<img src="plots/layer2_safety.png" alt="Collisions per 100m" width="70%" />  
 
-- `layer1_scaling.png` — ns/ray vs N: the `O(N)` scan blows up, the BVH stays flat.
-- `layer2_safety.png` — collisions/100 m vs budget (±std): the accelerator crashes far less when compute is scarce.
-- `layer2_rays.png` — rays cast vs budget: *why* — the BVH buys far more perception per ms.
+We observe roughly **~2.5x less** collisions when given only 0.5 ms.  
 
-## More
+### Ray Latency  
+<img src="plots/layer1_scaling.png" alt="Collisions per 100m" width="70%" />  
 
-See [`docs/DESIGN.md`](docs/DESIGN.md) for the full rationale, the cost-model
-calibration, locked parameters, results, and the running progress log.
+BVH becomes **exponentially** cheaper (less time per ray) as the scene grows. 
