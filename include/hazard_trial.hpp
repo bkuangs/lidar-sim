@@ -70,16 +70,8 @@ inline constexpr std::array<double, 3> hazardClearances = {2.0, 4.0, 8.0};
 inline constexpr std::array<double, 3> hazardDiameters = {0.10, 0.25, 0.50};
 inline constexpr std::array<double, 5> hazardOffsets = {
     -0.30, -0.15, 0.0, 0.15, 0.30};
-
-template <size_t Count>
-inline bool hazardValueIsOneOf(
-    double value, const std::array<double, Count> &values)
-{
-    for (const double candidate : values)
-        if (std::abs(value - candidate) <= geom::Epsilon)
-            return true;
-    return false;
-}
+inline constexpr std::array<double, 3> hazardSpeedSafetySpeeds = {2.0, 3.0, 4.0};
+inline constexpr std::array<double, 2> hazardSpeedSafetyClearances = {4.0, 8.0};
 
 inline unsigned hazardScenarioId(
     unsigned clearance_index,
@@ -92,6 +84,23 @@ inline unsigned hazardScenarioId(
              offset_index) *
             hazardPhaseCount +
             phase_index);
+}
+
+inline unsigned hazardSpeedScenarioId(
+    unsigned speed_index,
+    unsigned clearance_index,
+    unsigned diameter_index,
+    unsigned offset_index,
+    unsigned phase_index)
+{
+    return (((((speed_index * hazardSpeedSafetyClearances.size() +
+                clearance_index) *
+                   hazardDiameters.size() +
+               diameter_index) *
+                  hazardOffsets.size() +
+              offset_index) *
+                 hazardPhaseCount +
+             phase_index));
 }
 
 inline Vec3 hazardCenter(
@@ -169,9 +178,20 @@ inline double straightLineDistanceToHazardContact(
     return sweep.contact ? sweep.distance_to_contact : -1.0;
 }
 
-inline void validateHazardScenario(
+inline unsigned hazardValueIndex(
+    double value, const double *values, size_t count, const char *name)
+{
+    for (unsigned index = 0; index < count; ++index)
+        if (std::abs(value - values[index]) <= geom::Epsilon)
+            return index;
+    throw std::invalid_argument(
+        std::string("hazard scenario has unsupported ") + name);
+}
+
+inline void validateHazardScenarioPhysics(
     const HazardScenario &scenario,
-    const VehicleConfig &vehicle_config = VehicleConfig{})
+    const VehicleConfig &vehicle_config,
+    bool contact_at_stopping_endpoint_is_invalid)
 {
     if (!std::isfinite(scenario.speed) ||
         !std::isfinite(scenario.initial_clearance) ||
@@ -185,11 +205,7 @@ inline void validateHazardScenario(
         vehicle_config.length <= 0.0 || vehicle_config.width <= 0.0 ||
         vehicle_config.max_brake <= 0.0)
         throw std::invalid_argument("hazard scenario requires a positive vehicle footprint and brake");
-    if (!hazardValueIsOneOf(scenario.initial_clearance, hazardClearances) ||
-        !hazardValueIsOneOf(scenario.hazard.diameter, hazardDiameters) ||
-        !hazardValueIsOneOf(scenario.lateral_offset, hazardOffsets) ||
-        std::abs(scenario.speed - 3.0) > geom::Epsilon ||
-        std::abs(scenario.hazard.height - 2.0) > geom::Epsilon ||
+    if (std::abs(scenario.hazard.height - 2.0) > geom::Epsilon ||
         scenario.hazard.object_id != 1)
         throw std::invalid_argument("hazard scenario has unsupported benchmark parameters");
 
@@ -198,25 +214,6 @@ inline void validateHazardScenario(
     if (phase_index >= hazardPhaseCount ||
         std::abs(scaled_phase - phase_index) > geom::Epsilon)
         throw std::invalid_argument("hazard scenario has an invalid azimuth phase");
-
-    unsigned clearance_index = hazardClearances.size();
-    unsigned diameter_index = hazardDiameters.size();
-    unsigned offset_index = hazardOffsets.size();
-    for (unsigned i = 0; i < hazardClearances.size(); ++i)
-        if (std::abs(scenario.initial_clearance - hazardClearances[i]) <= geom::Epsilon)
-            clearance_index = i;
-    for (unsigned i = 0; i < hazardDiameters.size(); ++i)
-        if (std::abs(scenario.hazard.diameter - hazardDiameters[i]) <= geom::Epsilon)
-            diameter_index = i;
-    for (unsigned i = 0; i < hazardOffsets.size(); ++i)
-        if (std::abs(scenario.lateral_offset - hazardOffsets[i]) <= geom::Epsilon)
-            offset_index = i;
-    if (scenario.scenario_id != hazardScenarioId(
-                                    clearance_index,
-                                    diameter_index,
-                                    offset_index,
-                                    phase_index))
-        throw std::invalid_argument("hazard scenario ID does not identify its parameter tuple");
 
     VehicleState initial_vehicle;
     const Vec3 center = hazardCenter(scenario, vehicle_config);
@@ -239,8 +236,66 @@ inline void validateHazardScenario(
         throw std::invalid_argument("unbraked hazard scenario cannot collide");
     const double stopping_distance =
         scenario.speed * scenario.speed / (2.0 * hazardBraking);
-    if (contact_distance + geom::Epsilon < stopping_distance)
+    if (contact_at_stopping_endpoint_is_invalid
+            ? contact_distance <= stopping_distance + geom::Epsilon
+            : contact_distance + geom::Epsilon < stopping_distance)
         throw std::invalid_argument("first-frame braking cannot safely stop");
+}
+
+inline void validateHazardScenario(
+    const HazardScenario &scenario,
+    const VehicleConfig &vehicle_config = VehicleConfig{})
+{
+    if (std::abs(scenario.speed - 3.0) > geom::Epsilon)
+        throw std::invalid_argument("hazard scenario has unsupported benchmark parameters");
+    const unsigned clearance_index = hazardValueIndex(
+        scenario.initial_clearance, hazardClearances.data(),
+        hazardClearances.size(), "clearance");
+    const unsigned diameter_index = hazardValueIndex(
+        scenario.hazard.diameter, hazardDiameters.data(),
+        hazardDiameters.size(), "diameter");
+    const unsigned offset_index = hazardValueIndex(
+        scenario.lateral_offset, hazardOffsets.data(),
+        hazardOffsets.size(), "lateral offset");
+    validateHazardScenarioPhysics(scenario, vehicle_config, false);
+    const unsigned phase_index = static_cast<unsigned>(
+        std::llround(scenario.azimuth_phase * hazardPhaseCount));
+    if (scenario.scenario_id != hazardScenarioId(
+                                    clearance_index,
+                                    diameter_index,
+                                    offset_index,
+                                    phase_index))
+        throw std::invalid_argument(
+            "hazard scenario ID does not identify its parameter tuple");
+}
+
+inline void validateHazardSpeedScenario(
+    const HazardScenario &scenario,
+    const VehicleConfig &vehicle_config = VehicleConfig{})
+{
+    const unsigned speed_index = hazardValueIndex(
+        scenario.speed, hazardSpeedSafetySpeeds.data(),
+        hazardSpeedSafetySpeeds.size(), "speed");
+    const unsigned clearance_index = hazardValueIndex(
+        scenario.initial_clearance, hazardSpeedSafetyClearances.data(),
+        hazardSpeedSafetyClearances.size(), "speed-safety clearance");
+    const unsigned diameter_index = hazardValueIndex(
+        scenario.hazard.diameter, hazardDiameters.data(),
+        hazardDiameters.size(), "diameter");
+    const unsigned offset_index = hazardValueIndex(
+        scenario.lateral_offset, hazardOffsets.data(),
+        hazardOffsets.size(), "lateral offset");
+    validateHazardScenarioPhysics(scenario, vehicle_config, true);
+    const unsigned phase_index = static_cast<unsigned>(
+        std::llround(scenario.azimuth_phase * hazardPhaseCount));
+    if (scenario.scenario_id != hazardSpeedScenarioId(
+                                    speed_index,
+                                    clearance_index,
+                                    diameter_index,
+                                    offset_index,
+                                    phase_index))
+        throw std::invalid_argument(
+            "speed-safety scenario ID does not identify its parameter tuple");
 }
 
 inline std::vector<HazardScenario> generateHazardScenarios()
@@ -268,13 +323,42 @@ inline std::vector<HazardScenario> generateHazardScenarios()
     return scenarios;
 }
 
-inline HazardResult runHazardTrial(
+inline std::vector<HazardScenario> generateHazardSpeedScenarios()
+{
+    std::vector<HazardScenario> scenarios;
+    scenarios.reserve(
+        hazardSpeedSafetySpeeds.size() *
+        hazardSpeedSafetyClearances.size() *
+        hazardDiameters.size() * hazardOffsets.size() * hazardPhaseCount);
+    for (unsigned speed = 0; speed < hazardSpeedSafetySpeeds.size(); ++speed)
+        for (unsigned clearance = 0;
+             clearance < hazardSpeedSafetyClearances.size(); ++clearance)
+            for (unsigned diameter = 0; diameter < hazardDiameters.size(); ++diameter)
+                for (unsigned offset = 0; offset < hazardOffsets.size(); ++offset)
+                    for (unsigned phase = 0; phase < hazardPhaseCount; ++phase)
+                    {
+                        HazardScenario scenario;
+                        scenario.scenario_id = hazardSpeedScenarioId(
+                            speed, clearance, diameter, offset, phase);
+                        scenario.speed = hazardSpeedSafetySpeeds[speed];
+                        scenario.initial_clearance =
+                            hazardSpeedSafetyClearances[clearance];
+                        scenario.lateral_offset = hazardOffsets[offset];
+                        scenario.azimuth_phase =
+                            static_cast<double>(phase) / hazardPhaseCount;
+                        scenario.hazard.diameter = hazardDiameters[diameter];
+                        validateHazardSpeedScenario(scenario);
+                        scenarios.push_back(scenario);
+                    }
+    return scenarios;
+}
+
+inline HazardResult runValidatedHazardTrial(
     const HazardScenario &scenario,
     const HazardDetector &detector,
-    const VehicleConfig &vehicle_config = VehicleConfig{},
+    const VehicleConfig &vehicle_config,
     unsigned frame_limit = hazardFrameLimit)
 {
-    validateHazardScenario(scenario, vehicle_config);
     if (!detector)
         throw std::invalid_argument("hazard trial requires a detector");
     if (frame_limit == 0)
@@ -336,4 +420,26 @@ inline HazardResult runHazardTrial(
     }
     throw std::runtime_error(
         "hazard trial exceeded the conservative frame limit without an outcome");
+}
+
+inline HazardResult runHazardTrial(
+    const HazardScenario &scenario,
+    const HazardDetector &detector,
+    const VehicleConfig &vehicle_config = VehicleConfig{},
+    unsigned frame_limit = hazardFrameLimit)
+{
+    validateHazardScenario(scenario, vehicle_config);
+    return runValidatedHazardTrial(
+        scenario, detector, vehicle_config, frame_limit);
+}
+
+inline HazardResult runHazardSpeedTrial(
+    const HazardScenario &scenario,
+    const HazardDetector &detector,
+    const VehicleConfig &vehicle_config = VehicleConfig{},
+    unsigned frame_limit = hazardFrameLimit)
+{
+    validateHazardSpeedScenario(scenario, vehicle_config);
+    return runValidatedHazardTrial(
+        scenario, detector, vehicle_config, frame_limit);
 }

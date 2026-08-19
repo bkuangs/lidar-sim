@@ -1,0 +1,487 @@
+speed_mps,mode,ray_count,metric,metric_label,estimate,n_scenarios,n_measured
+2.0,mesh-bvh,0,safe_stop_rate,Safe-stop rate,0.0,960,960
+2.0,mesh-bvh,0,detection_range,Detection range,,960,0
+2.0,mesh-bvh,0,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.0,960,960
+2.0,mesh-bvh,0,stopping_margin,Stopping margin,,960,0
+2.0,mesh-bvh,0,collision_speed,Collision speed,2.0,960,960
+2.0,mesh-bvh,0,undetected_collision_rate,Undetected-collision rate,1.0,960,960
+2.0,mesh-bvh,5,safe_stop_rate,Safe-stop rate,0.34479166666666666,960,960
+2.0,mesh-bvh,5,detection_range,Detection range,6.691163027127552,960,331
+2.0,mesh-bvh,5,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.0458333333333334,960,960
+2.0,mesh-bvh,5,stopping_margin,Stopping margin,5.566465256797583,960,331
+2.0,mesh-bvh,5,collision_speed,Collision speed,1.3104166666666666,960,960
+2.0,mesh-bvh,5,undetected_collision_rate,Undetected-collision rate,0.6552083333333333,960,960
+2.0,mesh-bvh,9,safe_stop_rate,Safe-stop rate,0.4010416666666667,960,960
+2.0,mesh-bvh,9,detection_range,Detection range,3.6623506844389535,960,715
+2.0,mesh-bvh,9,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.1106250000000002,960,960
+2.0,mesh-bvh,9,stopping_margin,Stopping margin,2.4823776223776233,960,715
+2.0,mesh-bvh,9,collision_speed,Collision speed,0.933640927869195,960,960
+2.0,mesh-bvh,9,undetected_collision_rate,Undetected-collision rate,0.2552083333333333,960,960
+2.0,mesh-bvh,17,safe_stop_rate,Safe-stop rate,0.8666666666666667,960,960
+2.0,mesh-bvh,17,detection_range,Detection range,3.47354965464985,960,960
+2.0,mesh-bvh,17,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.4000694444444448,960,960
+2.0,mesh-bvh,17,stopping_margin,Stopping margin,2.3001388888888896,960,960
+2.0,mesh-bvh,17,collision_speed,Collision speed,0.15447042266348482,960,960
+2.0,mesh-bvh,17,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+2.0,mesh-bvh,33,safe_stop_rate,Safe-stop rate,1.0,960,960
+2.0,mesh-bvh,33,detection_range,Detection range,4.590099242767428,960,960
+2.0,mesh-bvh,33,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.961770833333333,960,960
+2.0,mesh-bvh,33,stopping_margin,Stopping margin,3.423541666666666,960,960
+2.0,mesh-bvh,33,collision_speed,Collision speed,0.0,960,960
+2.0,mesh-bvh,33,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+2.0,mesh-bvh,65,safe_stop_rate,Safe-stop rate,1.0,960,960
+2.0,mesh-bvh,65,detection_range,Detection range,5.97936044194291,960,960
+2.0,mesh-bvh,65,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,2.6707638888888883,960,960
+2.0,mesh-bvh,65,stopping_margin,Stopping margin,4.8415277777777765,960,960
+2.0,mesh-bvh,65,collision_speed,Collision speed,0.0,960,960
+2.0,mesh-bvh,65,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+2.0,mesh-bvh,129,safe_stop_rate,Safe-stop rate,1.0,960,960
+2.0,mesh-bvh,129,detection_range,Detection range,6.503865586550474,960,960
+2.0,mesh-bvh,129,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,2.943298611111111,960,960
+2.0,mesh-bvh,129,stopping_margin,Stopping margin,5.386597222222222,960,960
+2.0,mesh-bvh,129,collision_speed,Collision speed,0.0,960,960
+2.0,mesh-bvh,129,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+2.0,mesh-bvh,257,safe_stop_rate,Safe-stop rate,1.0,960,960
+2.0,mesh-bvh,257,detection_range,Detection range,6.582972492950446,960,960
+2.0,mesh-bvh,257,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,2.986111111111111,960,960
+2.0,mesh-bvh,257,stopping_margin,Stopping margin,5.472222222222222,960,960
+2.0,mesh-bvh,257,collision_speed,Collision speed,0.0,960,960
+2.0,mesh-bvh,257,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+2.0,mesh-bvh,361,safe_stop_rate,Safe-stop rate,1.0,960,960
+2.0,mesh-bvh,361,detection_range,Detection range,6.605977138964145,960,960
+2.0,mesh-bvh,361,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,3.0,960,960
+2.0,mesh-bvh,361,stopping_margin,Stopping margin,5.5,960,960
+2.0,mesh-bvh,361,collision_speed,Collision speed,0.0,960,960
+2.0,mesh-bvh,361,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+2.0,scene-bvh,0,safe_stop_rate,Safe-stop rate,0.0,960,960
+2.0,scene-bvh,0,detection_range,Detection range,,960,0
+2.0,scene-bvh,0,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.0,960,960
+2.0,scene-bvh,0,stopping_margin,Stopping margin,,960,0
+2.0,scene-bvh,0,collision_speed,Collision speed,2.0,960,960
+2.0,scene-bvh,0,undetected_collision_rate,Undetected-collision rate,1.0,960,960
+2.0,scene-bvh,5,safe_stop_rate,Safe-stop rate,0.34479166666666666,960,960
+2.0,scene-bvh,5,detection_range,Detection range,6.691163027127552,960,331
+2.0,scene-bvh,5,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.0458333333333334,960,960
+2.0,scene-bvh,5,stopping_margin,Stopping margin,5.566465256797583,960,331
+2.0,scene-bvh,5,collision_speed,Collision speed,1.3104166666666666,960,960
+2.0,scene-bvh,5,undetected_collision_rate,Undetected-collision rate,0.6552083333333333,960,960
+2.0,scene-bvh,9,safe_stop_rate,Safe-stop rate,0.4010416666666667,960,960
+2.0,scene-bvh,9,detection_range,Detection range,3.6623506844389535,960,715
+2.0,scene-bvh,9,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.1106250000000002,960,960
+2.0,scene-bvh,9,stopping_margin,Stopping margin,2.4823776223776233,960,715
+2.0,scene-bvh,9,collision_speed,Collision speed,0.933640927869195,960,960
+2.0,scene-bvh,9,undetected_collision_rate,Undetected-collision rate,0.2552083333333333,960,960
+2.0,scene-bvh,17,safe_stop_rate,Safe-stop rate,0.8666666666666667,960,960
+2.0,scene-bvh,17,detection_range,Detection range,3.47354965464985,960,960
+2.0,scene-bvh,17,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.4000694444444448,960,960
+2.0,scene-bvh,17,stopping_margin,Stopping margin,2.3001388888888896,960,960
+2.0,scene-bvh,17,collision_speed,Collision speed,0.15447042266348482,960,960
+2.0,scene-bvh,17,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+2.0,scene-bvh,33,safe_stop_rate,Safe-stop rate,1.0,960,960
+2.0,scene-bvh,33,detection_range,Detection range,4.590099242767428,960,960
+2.0,scene-bvh,33,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.961770833333333,960,960
+2.0,scene-bvh,33,stopping_margin,Stopping margin,3.423541666666666,960,960
+2.0,scene-bvh,33,collision_speed,Collision speed,0.0,960,960
+2.0,scene-bvh,33,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+2.0,scene-bvh,65,safe_stop_rate,Safe-stop rate,1.0,960,960
+2.0,scene-bvh,65,detection_range,Detection range,5.97936044194291,960,960
+2.0,scene-bvh,65,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,2.6707638888888883,960,960
+2.0,scene-bvh,65,stopping_margin,Stopping margin,4.8415277777777765,960,960
+2.0,scene-bvh,65,collision_speed,Collision speed,0.0,960,960
+2.0,scene-bvh,65,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+2.0,scene-bvh,129,safe_stop_rate,Safe-stop rate,1.0,960,960
+2.0,scene-bvh,129,detection_range,Detection range,6.503865586550474,960,960
+2.0,scene-bvh,129,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,2.943298611111111,960,960
+2.0,scene-bvh,129,stopping_margin,Stopping margin,5.386597222222222,960,960
+2.0,scene-bvh,129,collision_speed,Collision speed,0.0,960,960
+2.0,scene-bvh,129,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+2.0,scene-bvh,257,safe_stop_rate,Safe-stop rate,1.0,960,960
+2.0,scene-bvh,257,detection_range,Detection range,6.582972492950446,960,960
+2.0,scene-bvh,257,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,2.986111111111111,960,960
+2.0,scene-bvh,257,stopping_margin,Stopping margin,5.472222222222222,960,960
+2.0,scene-bvh,257,collision_speed,Collision speed,0.0,960,960
+2.0,scene-bvh,257,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+2.0,scene-bvh,361,safe_stop_rate,Safe-stop rate,1.0,960,960
+2.0,scene-bvh,361,detection_range,Detection range,6.605977138964145,960,960
+2.0,scene-bvh,361,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,3.0,960,960
+2.0,scene-bvh,361,stopping_margin,Stopping margin,5.5,960,960
+2.0,scene-bvh,361,collision_speed,Collision speed,0.0,960,960
+2.0,scene-bvh,361,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+2.0,true-brute,0,safe_stop_rate,Safe-stop rate,0.0,960,960
+2.0,true-brute,0,detection_range,Detection range,,960,0
+2.0,true-brute,0,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.0,960,960
+2.0,true-brute,0,stopping_margin,Stopping margin,,960,0
+2.0,true-brute,0,collision_speed,Collision speed,2.0,960,960
+2.0,true-brute,0,undetected_collision_rate,Undetected-collision rate,1.0,960,960
+2.0,true-brute,5,safe_stop_rate,Safe-stop rate,0.34479166666666666,960,960
+2.0,true-brute,5,detection_range,Detection range,6.691163027127552,960,331
+2.0,true-brute,5,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.0458333333333334,960,960
+2.0,true-brute,5,stopping_margin,Stopping margin,5.566465256797583,960,331
+2.0,true-brute,5,collision_speed,Collision speed,1.3104166666666666,960,960
+2.0,true-brute,5,undetected_collision_rate,Undetected-collision rate,0.6552083333333333,960,960
+2.0,true-brute,9,safe_stop_rate,Safe-stop rate,0.4010416666666667,960,960
+2.0,true-brute,9,detection_range,Detection range,3.6623506844389535,960,715
+2.0,true-brute,9,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.1106250000000002,960,960
+2.0,true-brute,9,stopping_margin,Stopping margin,2.4823776223776233,960,715
+2.0,true-brute,9,collision_speed,Collision speed,0.933640927869195,960,960
+2.0,true-brute,9,undetected_collision_rate,Undetected-collision rate,0.2552083333333333,960,960
+2.0,true-brute,17,safe_stop_rate,Safe-stop rate,0.8666666666666667,960,960
+2.0,true-brute,17,detection_range,Detection range,3.47354965464985,960,960
+2.0,true-brute,17,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.4000694444444448,960,960
+2.0,true-brute,17,stopping_margin,Stopping margin,2.3001388888888896,960,960
+2.0,true-brute,17,collision_speed,Collision speed,0.15447042266348482,960,960
+2.0,true-brute,17,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+2.0,true-brute,33,safe_stop_rate,Safe-stop rate,1.0,960,960
+2.0,true-brute,33,detection_range,Detection range,4.590099242767428,960,960
+2.0,true-brute,33,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.961770833333333,960,960
+2.0,true-brute,33,stopping_margin,Stopping margin,3.423541666666666,960,960
+2.0,true-brute,33,collision_speed,Collision speed,0.0,960,960
+2.0,true-brute,33,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+2.0,true-brute,65,safe_stop_rate,Safe-stop rate,1.0,960,960
+2.0,true-brute,65,detection_range,Detection range,5.97936044194291,960,960
+2.0,true-brute,65,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,2.6707638888888883,960,960
+2.0,true-brute,65,stopping_margin,Stopping margin,4.8415277777777765,960,960
+2.0,true-brute,65,collision_speed,Collision speed,0.0,960,960
+2.0,true-brute,65,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+2.0,true-brute,129,safe_stop_rate,Safe-stop rate,1.0,960,960
+2.0,true-brute,129,detection_range,Detection range,6.503865586550474,960,960
+2.0,true-brute,129,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,2.943298611111111,960,960
+2.0,true-brute,129,stopping_margin,Stopping margin,5.386597222222222,960,960
+2.0,true-brute,129,collision_speed,Collision speed,0.0,960,960
+2.0,true-brute,129,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+2.0,true-brute,257,safe_stop_rate,Safe-stop rate,1.0,960,960
+2.0,true-brute,257,detection_range,Detection range,6.582972492950446,960,960
+2.0,true-brute,257,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,2.986111111111111,960,960
+2.0,true-brute,257,stopping_margin,Stopping margin,5.472222222222222,960,960
+2.0,true-brute,257,collision_speed,Collision speed,0.0,960,960
+2.0,true-brute,257,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+2.0,true-brute,361,safe_stop_rate,Safe-stop rate,1.0,960,960
+2.0,true-brute,361,detection_range,Detection range,6.605977138964145,960,960
+2.0,true-brute,361,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,3.0,960,960
+2.0,true-brute,361,stopping_margin,Stopping margin,5.5,960,960
+2.0,true-brute,361,collision_speed,Collision speed,0.0,960,960
+2.0,true-brute,361,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+3.0,mesh-bvh,0,safe_stop_rate,Safe-stop rate,0.0,960,960
+3.0,mesh-bvh,0,detection_range,Detection range,,960,0
+3.0,mesh-bvh,0,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.0,960,960
+3.0,mesh-bvh,0,stopping_margin,Stopping margin,,960,0
+3.0,mesh-bvh,0,collision_speed,Collision speed,3.0,960,960
+3.0,mesh-bvh,0,undetected_collision_rate,Undetected-collision rate,1.0,960,960
+3.0,mesh-bvh,5,safe_stop_rate,Safe-stop rate,0.34479166666666666,960,960
+3.0,mesh-bvh,5,detection_range,Detection range,6.691163027127552,960,331
+3.0,mesh-bvh,5,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.6972222222222222,960,960
+3.0,mesh-bvh,5,stopping_margin,Stopping margin,4.941465256797583,960,331
+3.0,mesh-bvh,5,collision_speed,Collision speed,1.965625,960,960
+3.0,mesh-bvh,5,undetected_collision_rate,Undetected-collision rate,0.6552083333333333,960,960
+3.0,mesh-bvh,9,safe_stop_rate,Safe-stop rate,0.34479166666666666,960,960
+3.0,mesh-bvh,9,detection_range,Detection range,3.6647677100323035,960,715
+3.0,mesh-bvh,9,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.7410416666666673,960,960
+3.0,mesh-bvh,9,stopping_margin,Stopping margin,1.8598951048951076,960,715
+3.0,mesh-bvh,9,collision_speed,Collision speed,1.7716991272435128,960,960
+3.0,mesh-bvh,9,undetected_collision_rate,Undetected-collision rate,0.2552083333333333,960,960
+3.0,mesh-bvh,17,safe_stop_rate,Safe-stop rate,0.615625,960,960
+3.0,mesh-bvh,17,detection_range,Detection range,3.458111379726901,960,960
+3.0,mesh-bvh,17,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.9297916666666673,960,960
+3.0,mesh-bvh,17,stopping_margin,Stopping margin,1.6643750000000024,960,960
+3.0,mesh-bvh,17,collision_speed,Collision speed,0.6680525817279315,960,960
+3.0,mesh-bvh,17,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+3.0,mesh-bvh,33,safe_stop_rate,Safe-stop rate,0.9895833333333334,960,960
+3.0,mesh-bvh,33,detection_range,Detection range,4.576205348452688,960,960
+3.0,mesh-bvh,33,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.3043402777777782,960,960
+3.0,mesh-bvh,33,stopping_margin,Stopping margin,2.7880208333333343,960,960
+3.0,mesh-bvh,33,collision_speed,Collision speed,0.004658474953124287,960,960
+3.0,mesh-bvh,33,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+3.0,mesh-bvh,65,safe_stop_rate,Safe-stop rate,1.0,960,960
+3.0,mesh-bvh,65,detection_range,Detection range,5.972252956993534,960,960
+3.0,mesh-bvh,65,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.7785416666666665,960,960
+3.0,mesh-bvh,65,stopping_margin,Stopping margin,4.210624999999999,960,960
+3.0,mesh-bvh,65,collision_speed,Collision speed,0.0,960,960
+3.0,mesh-bvh,65,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+3.0,mesh-bvh,129,safe_stop_rate,Safe-stop rate,1.0,960,960
+3.0,mesh-bvh,129,detection_range,Detection range,6.501282862713751,960,960
+3.0,mesh-bvh,129,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.9614583333333333,960,960
+3.0,mesh-bvh,129,stopping_margin,Stopping margin,4.759375,960,960
+3.0,mesh-bvh,129,collision_speed,Collision speed,0.0,960,960
+3.0,mesh-bvh,129,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+3.0,mesh-bvh,257,safe_stop_rate,Safe-stop rate,1.0,960,960
+3.0,mesh-bvh,257,detection_range,Detection range,6.581836422477991,960,960
+3.0,mesh-bvh,257,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.9904166666666667,960,960
+3.0,mesh-bvh,257,stopping_margin,Stopping margin,4.8462499999999995,960,960
+3.0,mesh-bvh,257,collision_speed,Collision speed,0.0,960,960
+3.0,mesh-bvh,257,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+3.0,mesh-bvh,361,safe_stop_rate,Safe-stop rate,1.0,960,960
+3.0,mesh-bvh,361,detection_range,Detection range,6.605977138964145,960,960
+3.0,mesh-bvh,361,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,2.0,960,960
+3.0,mesh-bvh,361,stopping_margin,Stopping margin,4.875,960,960
+3.0,mesh-bvh,361,collision_speed,Collision speed,0.0,960,960
+3.0,mesh-bvh,361,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+3.0,scene-bvh,0,safe_stop_rate,Safe-stop rate,0.0,960,960
+3.0,scene-bvh,0,detection_range,Detection range,,960,0
+3.0,scene-bvh,0,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.0,960,960
+3.0,scene-bvh,0,stopping_margin,Stopping margin,,960,0
+3.0,scene-bvh,0,collision_speed,Collision speed,3.0,960,960
+3.0,scene-bvh,0,undetected_collision_rate,Undetected-collision rate,1.0,960,960
+3.0,scene-bvh,5,safe_stop_rate,Safe-stop rate,0.34479166666666666,960,960
+3.0,scene-bvh,5,detection_range,Detection range,6.691163027127552,960,331
+3.0,scene-bvh,5,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.6972222222222222,960,960
+3.0,scene-bvh,5,stopping_margin,Stopping margin,4.941465256797583,960,331
+3.0,scene-bvh,5,collision_speed,Collision speed,1.965625,960,960
+3.0,scene-bvh,5,undetected_collision_rate,Undetected-collision rate,0.6552083333333333,960,960
+3.0,scene-bvh,9,safe_stop_rate,Safe-stop rate,0.34479166666666666,960,960
+3.0,scene-bvh,9,detection_range,Detection range,3.6647677100323035,960,715
+3.0,scene-bvh,9,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.7410416666666673,960,960
+3.0,scene-bvh,9,stopping_margin,Stopping margin,1.8598951048951076,960,715
+3.0,scene-bvh,9,collision_speed,Collision speed,1.7716991272435128,960,960
+3.0,scene-bvh,9,undetected_collision_rate,Undetected-collision rate,0.2552083333333333,960,960
+3.0,scene-bvh,17,safe_stop_rate,Safe-stop rate,0.615625,960,960
+3.0,scene-bvh,17,detection_range,Detection range,3.458111379726901,960,960
+3.0,scene-bvh,17,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.9297916666666673,960,960
+3.0,scene-bvh,17,stopping_margin,Stopping margin,1.6643750000000024,960,960
+3.0,scene-bvh,17,collision_speed,Collision speed,0.6680525817279315,960,960
+3.0,scene-bvh,17,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+3.0,scene-bvh,33,safe_stop_rate,Safe-stop rate,0.9895833333333334,960,960
+3.0,scene-bvh,33,detection_range,Detection range,4.576205348452688,960,960
+3.0,scene-bvh,33,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.3043402777777782,960,960
+3.0,scene-bvh,33,stopping_margin,Stopping margin,2.7880208333333343,960,960
+3.0,scene-bvh,33,collision_speed,Collision speed,0.004658474953124287,960,960
+3.0,scene-bvh,33,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+3.0,scene-bvh,65,safe_stop_rate,Safe-stop rate,1.0,960,960
+3.0,scene-bvh,65,detection_range,Detection range,5.972252956993534,960,960
+3.0,scene-bvh,65,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.7785416666666665,960,960
+3.0,scene-bvh,65,stopping_margin,Stopping margin,4.210624999999999,960,960
+3.0,scene-bvh,65,collision_speed,Collision speed,0.0,960,960
+3.0,scene-bvh,65,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+3.0,scene-bvh,129,safe_stop_rate,Safe-stop rate,1.0,960,960
+3.0,scene-bvh,129,detection_range,Detection range,6.501282862713751,960,960
+3.0,scene-bvh,129,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.9614583333333333,960,960
+3.0,scene-bvh,129,stopping_margin,Stopping margin,4.759375,960,960
+3.0,scene-bvh,129,collision_speed,Collision speed,0.0,960,960
+3.0,scene-bvh,129,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+3.0,scene-bvh,257,safe_stop_rate,Safe-stop rate,1.0,960,960
+3.0,scene-bvh,257,detection_range,Detection range,6.581836422477991,960,960
+3.0,scene-bvh,257,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.9904166666666667,960,960
+3.0,scene-bvh,257,stopping_margin,Stopping margin,4.8462499999999995,960,960
+3.0,scene-bvh,257,collision_speed,Collision speed,0.0,960,960
+3.0,scene-bvh,257,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+3.0,scene-bvh,361,safe_stop_rate,Safe-stop rate,1.0,960,960
+3.0,scene-bvh,361,detection_range,Detection range,6.605977138964145,960,960
+3.0,scene-bvh,361,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,2.0,960,960
+3.0,scene-bvh,361,stopping_margin,Stopping margin,4.875,960,960
+3.0,scene-bvh,361,collision_speed,Collision speed,0.0,960,960
+3.0,scene-bvh,361,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+3.0,true-brute,0,safe_stop_rate,Safe-stop rate,0.0,960,960
+3.0,true-brute,0,detection_range,Detection range,,960,0
+3.0,true-brute,0,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.0,960,960
+3.0,true-brute,0,stopping_margin,Stopping margin,,960,0
+3.0,true-brute,0,collision_speed,Collision speed,3.0,960,960
+3.0,true-brute,0,undetected_collision_rate,Undetected-collision rate,1.0,960,960
+3.0,true-brute,5,safe_stop_rate,Safe-stop rate,0.34479166666666666,960,960
+3.0,true-brute,5,detection_range,Detection range,6.691163027127552,960,331
+3.0,true-brute,5,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.6972222222222222,960,960
+3.0,true-brute,5,stopping_margin,Stopping margin,4.941465256797583,960,331
+3.0,true-brute,5,collision_speed,Collision speed,1.965625,960,960
+3.0,true-brute,5,undetected_collision_rate,Undetected-collision rate,0.6552083333333333,960,960
+3.0,true-brute,9,safe_stop_rate,Safe-stop rate,0.34479166666666666,960,960
+3.0,true-brute,9,detection_range,Detection range,3.6647677100323035,960,715
+3.0,true-brute,9,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.7410416666666673,960,960
+3.0,true-brute,9,stopping_margin,Stopping margin,1.8598951048951076,960,715
+3.0,true-brute,9,collision_speed,Collision speed,1.7716991272435128,960,960
+3.0,true-brute,9,undetected_collision_rate,Undetected-collision rate,0.2552083333333333,960,960
+3.0,true-brute,17,safe_stop_rate,Safe-stop rate,0.615625,960,960
+3.0,true-brute,17,detection_range,Detection range,3.458111379726901,960,960
+3.0,true-brute,17,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.9297916666666673,960,960
+3.0,true-brute,17,stopping_margin,Stopping margin,1.6643750000000024,960,960
+3.0,true-brute,17,collision_speed,Collision speed,0.6680525817279315,960,960
+3.0,true-brute,17,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+3.0,true-brute,33,safe_stop_rate,Safe-stop rate,0.9895833333333334,960,960
+3.0,true-brute,33,detection_range,Detection range,4.576205348452688,960,960
+3.0,true-brute,33,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.3043402777777782,960,960
+3.0,true-brute,33,stopping_margin,Stopping margin,2.7880208333333343,960,960
+3.0,true-brute,33,collision_speed,Collision speed,0.004658474953124287,960,960
+3.0,true-brute,33,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+3.0,true-brute,65,safe_stop_rate,Safe-stop rate,1.0,960,960
+3.0,true-brute,65,detection_range,Detection range,5.972252956993534,960,960
+3.0,true-brute,65,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.7785416666666665,960,960
+3.0,true-brute,65,stopping_margin,Stopping margin,4.210624999999999,960,960
+3.0,true-brute,65,collision_speed,Collision speed,0.0,960,960
+3.0,true-brute,65,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+3.0,true-brute,129,safe_stop_rate,Safe-stop rate,1.0,960,960
+3.0,true-brute,129,detection_range,Detection range,6.501282862713751,960,960
+3.0,true-brute,129,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.9614583333333333,960,960
+3.0,true-brute,129,stopping_margin,Stopping margin,4.759375,960,960
+3.0,true-brute,129,collision_speed,Collision speed,0.0,960,960
+3.0,true-brute,129,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+3.0,true-brute,257,safe_stop_rate,Safe-stop rate,1.0,960,960
+3.0,true-brute,257,detection_range,Detection range,6.581836422477991,960,960
+3.0,true-brute,257,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.9904166666666667,960,960
+3.0,true-brute,257,stopping_margin,Stopping margin,4.8462499999999995,960,960
+3.0,true-brute,257,collision_speed,Collision speed,0.0,960,960
+3.0,true-brute,257,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+3.0,true-brute,361,safe_stop_rate,Safe-stop rate,1.0,960,960
+3.0,true-brute,361,detection_range,Detection range,6.605977138964145,960,960
+3.0,true-brute,361,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,2.0,960,960
+3.0,true-brute,361,stopping_margin,Stopping margin,4.875,960,960
+3.0,true-brute,361,collision_speed,Collision speed,0.0,960,960
+3.0,true-brute,361,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+4.0,mesh-bvh,0,safe_stop_rate,Safe-stop rate,0.0,960,960
+4.0,mesh-bvh,0,detection_range,Detection range,,960,0
+4.0,mesh-bvh,0,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.0,960,960
+4.0,mesh-bvh,0,stopping_margin,Stopping margin,,960,0
+4.0,mesh-bvh,0,collision_speed,Collision speed,4.0,960,960
+4.0,mesh-bvh,0,undetected_collision_rate,Undetected-collision rate,1.0,960,960
+4.0,mesh-bvh,5,safe_stop_rate,Safe-stop rate,0.34479166666666666,960,960
+4.0,mesh-bvh,5,detection_range,Detection range,6.691163027127552,960,331
+4.0,mesh-bvh,5,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.5229166666666667,960,960
+4.0,mesh-bvh,5,stopping_margin,Stopping margin,4.066465256797583,960,331
+4.0,mesh-bvh,5,collision_speed,Collision speed,2.620833333333333,960,960
+4.0,mesh-bvh,5,undetected_collision_rate,Undetected-collision rate,0.6552083333333333,960,960
+4.0,mesh-bvh,9,safe_stop_rate,Safe-stop rate,0.34479166666666666,960,960
+4.0,mesh-bvh,9,detection_range,Detection range,3.6309422312846222,960,715
+4.0,mesh-bvh,9,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.5514583333333328,960,960
+4.0,mesh-bvh,9,stopping_margin,Stopping margin,0.9616783216783188,960,715
+4.0,mesh-bvh,9,collision_speed,Collision speed,2.501048802881251,960,960
+4.0,mesh-bvh,9,undetected_collision_rate,Undetected-collision rate,0.2552083333333333,960,960
+4.0,mesh-bvh,17,safe_stop_rate,Safe-stop rate,0.34479166666666666,960,960
+4.0,mesh-bvh,17,detection_range,Detection range,3.443375346683962,960,960
+4.0,mesh-bvh,17,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.694479166666666,960,960
+4.0,mesh-bvh,17,stopping_margin,Stopping margin,0.777916666666664,960,960
+4.0,mesh-bvh,17,collision_speed,Collision speed,1.67244505736791,960,960
+4.0,mesh-bvh,17,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+4.0,mesh-bvh,33,safe_stop_rate,Safe-stop rate,0.7802083333333333,960,960
+4.0,mesh-bvh,33,detection_range,Detection range,4.564535226176402,960,960
+4.0,mesh-bvh,33,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.9759027777777776,960,960
+4.0,mesh-bvh,33,stopping_margin,Stopping margin,1.90361111111111,960,960
+4.0,mesh-bvh,33,collision_speed,Collision speed,0.38694741908562696,960,960
+4.0,mesh-bvh,33,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+4.0,mesh-bvh,65,safe_stop_rate,Safe-stop rate,1.0,960,960
+4.0,mesh-bvh,65,detection_range,Detection range,5.966181664939555,960,960
+4.0,mesh-bvh,65,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.3326041666666666,960,960
+4.0,mesh-bvh,65,stopping_margin,Stopping margin,3.3304166666666664,960,960
+4.0,mesh-bvh,65,collision_speed,Collision speed,0.0,960,960
+4.0,mesh-bvh,65,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+4.0,mesh-bvh,129,safe_stop_rate,Safe-stop rate,1.0,960,960
+4.0,mesh-bvh,129,detection_range,Detection range,6.498996740087703,960,960
+4.0,mesh-bvh,129,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.4705902777777777,960,960
+4.0,mesh-bvh,129,stopping_margin,Stopping margin,3.882361111111111,960,960
+4.0,mesh-bvh,129,collision_speed,Collision speed,0.0,960,960
+4.0,mesh-bvh,129,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+4.0,mesh-bvh,257,safe_stop_rate,Safe-stop rate,1.0,960,960
+4.0,mesh-bvh,257,detection_range,Detection range,6.581056788558969,960,960
+4.0,mesh-bvh,257,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.4926388888888888,960,960
+4.0,mesh-bvh,257,stopping_margin,Stopping margin,3.9705555555555554,960,960
+4.0,mesh-bvh,257,collision_speed,Collision speed,0.0,960,960
+4.0,mesh-bvh,257,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+4.0,mesh-bvh,361,safe_stop_rate,Safe-stop rate,1.0,960,960
+4.0,mesh-bvh,361,detection_range,Detection range,6.605977138964145,960,960
+4.0,mesh-bvh,361,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.5,960,960
+4.0,mesh-bvh,361,stopping_margin,Stopping margin,4.0,960,960
+4.0,mesh-bvh,361,collision_speed,Collision speed,0.0,960,960
+4.0,mesh-bvh,361,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+4.0,scene-bvh,0,safe_stop_rate,Safe-stop rate,0.0,960,960
+4.0,scene-bvh,0,detection_range,Detection range,,960,0
+4.0,scene-bvh,0,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.0,960,960
+4.0,scene-bvh,0,stopping_margin,Stopping margin,,960,0
+4.0,scene-bvh,0,collision_speed,Collision speed,4.0,960,960
+4.0,scene-bvh,0,undetected_collision_rate,Undetected-collision rate,1.0,960,960
+4.0,scene-bvh,5,safe_stop_rate,Safe-stop rate,0.34479166666666666,960,960
+4.0,scene-bvh,5,detection_range,Detection range,6.691163027127552,960,331
+4.0,scene-bvh,5,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.5229166666666667,960,960
+4.0,scene-bvh,5,stopping_margin,Stopping margin,4.066465256797583,960,331
+4.0,scene-bvh,5,collision_speed,Collision speed,2.620833333333333,960,960
+4.0,scene-bvh,5,undetected_collision_rate,Undetected-collision rate,0.6552083333333333,960,960
+4.0,scene-bvh,9,safe_stop_rate,Safe-stop rate,0.34479166666666666,960,960
+4.0,scene-bvh,9,detection_range,Detection range,3.6309422312846222,960,715
+4.0,scene-bvh,9,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.5514583333333328,960,960
+4.0,scene-bvh,9,stopping_margin,Stopping margin,0.9616783216783188,960,715
+4.0,scene-bvh,9,collision_speed,Collision speed,2.501048802881251,960,960
+4.0,scene-bvh,9,undetected_collision_rate,Undetected-collision rate,0.2552083333333333,960,960
+4.0,scene-bvh,17,safe_stop_rate,Safe-stop rate,0.34479166666666666,960,960
+4.0,scene-bvh,17,detection_range,Detection range,3.443375346683962,960,960
+4.0,scene-bvh,17,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.694479166666666,960,960
+4.0,scene-bvh,17,stopping_margin,Stopping margin,0.777916666666664,960,960
+4.0,scene-bvh,17,collision_speed,Collision speed,1.67244505736791,960,960
+4.0,scene-bvh,17,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+4.0,scene-bvh,33,safe_stop_rate,Safe-stop rate,0.7802083333333333,960,960
+4.0,scene-bvh,33,detection_range,Detection range,4.564535226176402,960,960
+4.0,scene-bvh,33,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.9759027777777776,960,960
+4.0,scene-bvh,33,stopping_margin,Stopping margin,1.90361111111111,960,960
+4.0,scene-bvh,33,collision_speed,Collision speed,0.38694741908562696,960,960
+4.0,scene-bvh,33,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+4.0,scene-bvh,65,safe_stop_rate,Safe-stop rate,1.0,960,960
+4.0,scene-bvh,65,detection_range,Detection range,5.966181664939555,960,960
+4.0,scene-bvh,65,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.3326041666666666,960,960
+4.0,scene-bvh,65,stopping_margin,Stopping margin,3.3304166666666664,960,960
+4.0,scene-bvh,65,collision_speed,Collision speed,0.0,960,960
+4.0,scene-bvh,65,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+4.0,scene-bvh,129,safe_stop_rate,Safe-stop rate,1.0,960,960
+4.0,scene-bvh,129,detection_range,Detection range,6.498996740087703,960,960
+4.0,scene-bvh,129,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.4705902777777777,960,960
+4.0,scene-bvh,129,stopping_margin,Stopping margin,3.882361111111111,960,960
+4.0,scene-bvh,129,collision_speed,Collision speed,0.0,960,960
+4.0,scene-bvh,129,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+4.0,scene-bvh,257,safe_stop_rate,Safe-stop rate,1.0,960,960
+4.0,scene-bvh,257,detection_range,Detection range,6.581056788558969,960,960
+4.0,scene-bvh,257,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.4926388888888888,960,960
+4.0,scene-bvh,257,stopping_margin,Stopping margin,3.9705555555555554,960,960
+4.0,scene-bvh,257,collision_speed,Collision speed,0.0,960,960
+4.0,scene-bvh,257,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+4.0,scene-bvh,361,safe_stop_rate,Safe-stop rate,1.0,960,960
+4.0,scene-bvh,361,detection_range,Detection range,6.605977138964145,960,960
+4.0,scene-bvh,361,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.5,960,960
+4.0,scene-bvh,361,stopping_margin,Stopping margin,4.0,960,960
+4.0,scene-bvh,361,collision_speed,Collision speed,0.0,960,960
+4.0,scene-bvh,361,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+4.0,true-brute,0,safe_stop_rate,Safe-stop rate,0.0,960,960
+4.0,true-brute,0,detection_range,Detection range,,960,0
+4.0,true-brute,0,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.0,960,960
+4.0,true-brute,0,stopping_margin,Stopping margin,,960,0
+4.0,true-brute,0,collision_speed,Collision speed,4.0,960,960
+4.0,true-brute,0,undetected_collision_rate,Undetected-collision rate,1.0,960,960
+4.0,true-brute,5,safe_stop_rate,Safe-stop rate,0.34479166666666666,960,960
+4.0,true-brute,5,detection_range,Detection range,6.691163027127552,960,331
+4.0,true-brute,5,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.5229166666666667,960,960
+4.0,true-brute,5,stopping_margin,Stopping margin,4.066465256797583,960,331
+4.0,true-brute,5,collision_speed,Collision speed,2.620833333333333,960,960
+4.0,true-brute,5,undetected_collision_rate,Undetected-collision rate,0.6552083333333333,960,960
+4.0,true-brute,9,safe_stop_rate,Safe-stop rate,0.34479166666666666,960,960
+4.0,true-brute,9,detection_range,Detection range,3.6309422312846222,960,715
+4.0,true-brute,9,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.5514583333333328,960,960
+4.0,true-brute,9,stopping_margin,Stopping margin,0.9616783216783188,960,715
+4.0,true-brute,9,collision_speed,Collision speed,2.501048802881251,960,960
+4.0,true-brute,9,undetected_collision_rate,Undetected-collision rate,0.2552083333333333,960,960
+4.0,true-brute,17,safe_stop_rate,Safe-stop rate,0.34479166666666666,960,960
+4.0,true-brute,17,detection_range,Detection range,3.443375346683962,960,960
+4.0,true-brute,17,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.694479166666666,960,960
+4.0,true-brute,17,stopping_margin,Stopping margin,0.777916666666664,960,960
+4.0,true-brute,17,collision_speed,Collision speed,1.67244505736791,960,960
+4.0,true-brute,17,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+4.0,true-brute,33,safe_stop_rate,Safe-stop rate,0.7802083333333333,960,960
+4.0,true-brute,33,detection_range,Detection range,4.564535226176402,960,960
+4.0,true-brute,33,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,0.9759027777777776,960,960
+4.0,true-brute,33,stopping_margin,Stopping margin,1.90361111111111,960,960
+4.0,true-brute,33,collision_speed,Collision speed,0.38694741908562696,960,960
+4.0,true-brute,33,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+4.0,true-brute,65,safe_stop_rate,Safe-stop rate,1.0,960,960
+4.0,true-brute,65,detection_range,Detection range,5.966181664939555,960,960
+4.0,true-brute,65,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.3326041666666666,960,960
+4.0,true-brute,65,stopping_margin,Stopping margin,3.3304166666666664,960,960
+4.0,true-brute,65,collision_speed,Collision speed,0.0,960,960
+4.0,true-brute,65,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+4.0,true-brute,129,safe_stop_rate,Safe-stop rate,1.0,960,960
+4.0,true-brute,129,detection_range,Detection range,6.498996740087703,960,960
+4.0,true-brute,129,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.4705902777777777,960,960
+4.0,true-brute,129,stopping_margin,Stopping margin,3.882361111111111,960,960
+4.0,true-brute,129,collision_speed,Collision speed,0.0,960,960
+4.0,true-brute,129,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+4.0,true-brute,257,safe_stop_rate,Safe-stop rate,1.0,960,960
+4.0,true-brute,257,detection_range,Detection range,6.581056788558969,960,960
+4.0,true-brute,257,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.4926388888888888,960,960
+4.0,true-brute,257,stopping_margin,Stopping margin,3.9705555555555554,960,960
+4.0,true-brute,257,collision_speed,Collision speed,0.0,960,960
+4.0,true-brute,257,undetected_collision_rate,Undetected-collision rate,0.0,960,960
+4.0,true-brute,361,safe_stop_rate,Safe-stop rate,1.0,960,960
+4.0,true-brute,361,detection_range,Detection range,6.605977138964145,960,960
+4.0,true-brute,361,unbraked_ttc_all_scenarios,All-scenario unbraked TTC,1.5,960,960
+4.0,true-brute,361,stopping_margin,Stopping margin,4.0,960,960
+4.0,true-brute,361,collision_speed,Collision speed,0.0,960,960
+4.0,true-brute,361,undetected_collision_rate,Undetected-collision rate,0.0,960,960
