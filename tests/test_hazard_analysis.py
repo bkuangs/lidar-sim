@@ -141,6 +141,19 @@ class HazardAnalysisTest(unittest.TestCase):
                 "fixed-ray outcomes differ for 2 paired scenarios"):
             analyze_hazard.prepare_fixed_ray_safety(summary, mismatched)
 
+    def test_fixed_ray_plot_rejects_duplicate_scenario_row(self):
+        trials = analyze_hazard.read_trials(os.path.join(FIXTURES, "hazard_trials.csv"))
+        summary, grouped = analyze_hazard.summarize_trials(trials)
+        duplicated = {
+            key: [dict(row) for row in rows]
+            for key, rows in grouped.items()
+        }
+        duplicated["scene-bvh", 9].append(dict(duplicated["scene-bvh", 9][0]))
+
+        with self.assertRaisesRegex(
+                analyze_hazard.ValidationError, "rows contain duplicate scenario IDs"):
+            analyze_hazard.prepare_fixed_ray_safety(summary, duplicated)
+
     def test_plot_output_contract_replaces_difference_and_ray_images(self):
         self.assertEqual(
             {

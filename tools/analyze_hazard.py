@@ -387,19 +387,26 @@ def prepare_fixed_ray_safety(summary, grouped):
 
     reference_mode = sorted(by_mode)[0]
     reference = by_mode[reference_mode]
+    outcomes_by_key = {}
     for mode, values in sorted(by_mode.items()):
         if values.keys() != reference.keys():
             raise ValidationError(
                 f"fixed-ray safe-stop counts differ between {reference_mode} and {mode}")
         for ray_count in values:
-            reference_outcomes = {
-                row["scenario_id"]: row["outcome"]
-                for row in grouped[(reference_mode, ray_count)]
-            }
+            rows = grouped[(mode, ray_count)]
             outcomes = {
                 row["scenario_id"]: row["outcome"]
-                for row in grouped[(mode, ray_count)]
+                for row in rows
             }
+            if len(outcomes) != len(rows):
+                raise ValidationError(
+                    f"fixed-ray {mode} {ray_count}-ray rows contain duplicate scenario IDs")
+            outcomes_by_key[(mode, ray_count)] = outcomes
+
+    for mode, values in sorted(by_mode.items()):
+        for ray_count in values:
+            reference_outcomes = outcomes_by_key[(reference_mode, ray_count)]
+            outcomes = outcomes_by_key[(mode, ray_count)]
             if reference_outcomes.keys() != outcomes.keys():
                 raise ValidationError(
                     f"fixed-ray scenarios differ at {ray_count} rays "
