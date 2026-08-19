@@ -6,8 +6,10 @@ dist/
 /build/
 CODEX.md
 /build*/
-scaling.csv
+/scaling.csv
 /.venv/
-/plots/*.csv
-layer2.csv
-/docs/
+/layer2.csv
+/docs/*
+!/docs/hazard-benchmark-plan.md
+!/docs/ideas/
+!/docs/ideas/*.md

@@ -21,7 +21,7 @@
  * (Scene::intersect tests the ray against every object; each object still uses
  * its own per-mesh BVH / analytic form), contrasted against the O(log N)
  * scene-level SceneBVH. This shows the top-level tree turning an O(N) scan into
- * O(log N): the per-ray cost stays flat as N grows.
+ * O(log N): the per-ray cost grows slowly as N grows.
  *
  * NOTE: "linear-scan" here is NOT triangle-soup brute force. Obstacles are
  * analytic spheres / 12-tri cubes, so per-object cost is tiny — this isolates

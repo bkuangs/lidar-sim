@@ -6,9 +6,9 @@ that turns those numbers into pictures. It runs both binaries, saves their CSVs,
 and renders:
 
   1. layer1_scaling.png  - ns/ray vs obstacle count N
-       brute force O(N) scan climbs; scene-BVH O(log N) stays flat.
-  2. layer2_safety.png   - collisions/100m vs per-frame compute budget
-       the headline: same budget, but the accelerator crashes far less.
+       brute force O(N) scan climbs; scene-BVH O(log N) grows slowly.
+  2. layer2_safety.png   - collision-free completion vs compute budget
+       the primary all-seed safety outcome with bootstrap confidence intervals.
   3. layer2_rays.png     - rays actually cast (avg_K) vs budget
        the mechanism: the BVH affords far more perception per frame.
 
@@ -62,7 +62,7 @@ def read_csv(path):
         return list(csv.DictReader(f))
 
 
-def run_benchmarks(args, scaling_csv, layer2_csv):
+def run_benchmarks(args, scaling_csv, layer2_csv, trials_csv):
     scaling_bin = find_binary(args.build_dir, "lidar_scaling")
     layer2_bin = find_binary(args.build_dir, "layer2_benchmark")
 
@@ -70,7 +70,8 @@ def run_benchmarks(args, scaling_csv, layer2_csv):
     subprocess.run([scaling_bin, "--csv", scaling_csv], check=True,
                    stdout=subprocess.DEVNULL)
 
-    cmd = [layer2_bin, "--seeds", str(args.seeds), "--csv"]
+    cmd = [layer2_bin, "--seeds", str(args.seeds), "--csv",
+           "--trials-csv", trials_csv]
     if args.with_mesh_bvh:
         cmd.append("--with-mesh-bvh")
     print(f"[run] {' '.join(cmd)} > {layer2_csv}")
@@ -96,7 +97,7 @@ def plot_layer1(rows, out_path):
     ax.set_xscale("log")
     ax.set_xlabel("obstacles in corridor  (N, log scale)")
     ax.set_ylabel("query cost  (ns / ray)")
-    ax.set_title("Layer 1 - per-ray cost vs scene size\nO(N) scan blows up; the scene-BVH stays flat")
+    ax.set_title("Layer 1 - per-ray cost vs scene size\nO(N) scan grows rapidly; scene-BVH grows slowly")
     ax.grid(True, which="both", alpha=0.3)
     ax.legend()
     fig.tight_layout()
@@ -121,23 +122,31 @@ def _layer2_series(rows, ykey, need_scored):
 
 
 def plot_layer2_safety(rows, out_path):
-    by_mode = _layer2_series(rows, "coll_per_100m_mean", need_scored=True)
+    by_mode = defaultdict(list)
+    for r in rows:
+        by_mode[r["mode"]].append(
+            (float(r["budget_ms"]),
+             float(r["success_pct"]),
+             float(r["success_ci_low_pct"]),
+             float(r["success_ci_high_pct"]))
+        )
+    for mode in by_mode:
+        by_mode[mode].sort()
 
     fig, ax = plt.subplots(figsize=(7, 4.5))
     for mode, pts in by_mode.items():
         xs = [p[0] for p in pts]
         ys = [p[1] for p in pts]
-        sd = [p[2] for p in pts]
+        lo = [p[2] for p in pts]
+        hi = [p[3] for p in pts]
         st = style(mode)
         ax.plot(xs, ys, marker=st["marker"], color=st["color"], label=st["label"])
-        lo = [y - e for y, e in zip(ys, sd)]
-        hi = [y + e for y, e in zip(ys, sd)]
         ax.fill_between(xs, lo, hi, color=st["color"], alpha=0.15)
 
     ax.set_xlabel("per-frame perception budget  (ms)")
-    ax.set_ylabel("collisions / 100 m")
-    ax.set_title("Layer 2 - safety vs compute budget\nsame budget, far fewer crashes with the accelerator")
-    ax.set_ylim(bottom=0)
+    ax.set_ylabel("collision-free completion  (%)")
+    ax.set_title("Layer 2 - all-seed safety vs compute budget\npaired courses; shaded 95% bootstrap CI")
+    ax.set_ylim(0, 100)
     ax.grid(True, alpha=0.3)
     ax.legend()
     fig.tight_layout()
@@ -186,9 +195,10 @@ def main():
     os.makedirs(args.out_dir, exist_ok=True)
     scaling_csv = os.path.join(args.out_dir, "scaling.csv")
     layer2_csv = os.path.join(args.out_dir, "layer2.csv")
+    trials_csv = os.path.join(args.out_dir, "layer2_trials.csv")
 
     if not args.no_run:
-        run_benchmarks(args, scaling_csv, layer2_csv)
+        run_benchmarks(args, scaling_csv, layer2_csv, trials_csv)
     else:
         for p in (scaling_csv, layer2_csv):
             if not os.path.isfile(p):

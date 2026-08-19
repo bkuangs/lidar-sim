@@ -59,38 +59,129 @@ inline Eigen::Isometry3d lidarPoseFromVehicle(
     return pose;
 }
 
-inline AABB vehicleFootprintBounds(
+inline bool vehicleIntersectsCircle(
     const VehicleState &vehicle,
-    const VehicleConfig &config)
+    const VehicleConfig &config,
+    const Vec3 &center,
+    double radius)
 {
-    AABB bbox;
-    bbox.setEmpty();
-
+    const double dx = center.x() - vehicle.x;
+    const double dy = center.y() - vehicle.y;
     const double c = std::cos(vehicle.heading);
     const double s = std::sin(vehicle.heading);
-    const Vec3 forward(c, s, 0.0);
-    const Vec3 right(-s, c, 0.0);
-    const Vec3 center(vehicle.x, vehicle.y, 0.0);
-
-    for (double x_sign : {-1.0, 1.0})
-    {
-        for (double y_sign : {-1.0, 1.0})
-        {
-            const Vec3 corner =
-                center +
-                x_sign * 0.5 * config.length * forward +
-                y_sign * 0.5 * config.width * right;
-            bbox.extend(corner);
-        }
-    }
-
-    bbox.extend(Vec3(vehicle.x, vehicle.y, config.lidar_height));
-    return bbox;
+    const double local_x = c * dx + s * dy;
+    const double local_y = -s * dx + c * dy;
+    const double closest_x = std::clamp(
+        local_x, -0.5 * config.length, 0.5 * config.length);
+    const double closest_y = std::clamp(
+        local_y, -0.5 * config.width, 0.5 * config.width);
+    const double separation_x = local_x - closest_x;
+    const double separation_y = local_y - closest_y;
+    return separation_x * separation_x + separation_y * separation_y <=
+           radius * radius + geom::Epsilon;
 }
 
-inline bool intersectsAABB(const AABB &a, const AABB &b)
+inline VehicleState interpolateVehicleState(
+    const VehicleState &from,
+    const VehicleState &to,
+    double t)
 {
-    return (a.min().x() <= b.max().x() && a.max().x() >= b.min().x()) &&
-           (a.min().y() <= b.max().y() && a.max().y() >= b.min().y()) &&
-           (a.min().z() <= b.max().z() && a.max().z() >= b.min().z());
+    VehicleState state;
+    state.x = from.x + t * (to.x - from.x);
+    state.y = from.y + t * (to.y - from.y);
+    const double heading_delta =
+        std::remainder(to.heading - from.heading, 2.0 * geom::pi);
+    state.heading = from.heading + t * heading_delta;
+    state.speed = from.speed + t * (to.speed - from.speed);
+    state.steering = from.steering + t * (to.steering - from.steering);
+    return state;
+}
+
+inline int vehicleMotionSubdivisions(
+    const VehicleState &from,
+    const VehicleState &to,
+    const VehicleConfig &config,
+    double tolerance)
+{
+    const double translation = std::hypot(to.x - from.x, to.y - from.y);
+    const double heading_delta =
+        std::abs(std::remainder(to.heading - from.heading, 2.0 * geom::pi));
+    const double corner_radius =
+        std::hypot(0.5 * config.length, 0.5 * config.width);
+    const double motion_bound = translation + heading_delta * corner_radius;
+    return std::max(
+        1,
+        static_cast<int>(
+            std::ceil(motion_bound / std::max(tolerance, geom::Epsilon))));
+}
+
+inline bool sweptVehicleIntersectsCircle(
+    const VehicleState &from,
+    const VehicleState &to,
+    const VehicleConfig &config,
+    const Vec3 &center,
+    double radius,
+    double tolerance)
+{
+    const double broad_radius =
+        std::hypot(0.5 * config.length, 0.5 * config.width) + radius;
+    if (center.x() < std::min(from.x, to.x) - broad_radius ||
+        center.x() > std::max(from.x, to.x) + broad_radius ||
+        center.y() < std::min(from.y, to.y) - broad_radius ||
+        center.y() > std::max(from.y, to.y) + broad_radius)
+    {
+        return false;
+    }
+
+    const int subdivisions =
+        vehicleMotionSubdivisions(from, to, config, tolerance);
+    for (int step = 0; step <= subdivisions; ++step)
+    {
+        const double t = static_cast<double>(step) / subdivisions;
+        if (vehicleIntersectsCircle(
+                interpolateVehicleState(from, to, t),
+                config,
+                center,
+                radius))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+inline bool vehicleTouchesCorridorWall(
+    const VehicleState &vehicle,
+    const VehicleConfig &config,
+    double corridor_half_width)
+{
+    const double s = std::abs(std::sin(vehicle.heading));
+    const double c = std::abs(std::cos(vehicle.heading));
+    const double lateral_extent =
+        0.5 * config.length * s + 0.5 * config.width * c;
+    return std::abs(vehicle.y) + lateral_extent >=
+           corridor_half_width - geom::Epsilon;
+}
+
+inline bool sweptVehicleTouchesCorridorWall(
+    const VehicleState &from,
+    const VehicleState &to,
+    const VehicleConfig &config,
+    double corridor_half_width,
+    double tolerance)
+{
+    const int subdivisions =
+        vehicleMotionSubdivisions(from, to, config, tolerance);
+    for (int step = 0; step <= subdivisions; ++step)
+    {
+        const double t = static_cast<double>(step) / subdivisions;
+        if (vehicleTouchesCorridorWall(
+                interpolateVehicleState(from, to, t),
+                config,
+                corridor_half_width))
+        {
+            return true;
+        }
+    }
+    return false;
 }

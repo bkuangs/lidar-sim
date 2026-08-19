@@ -6,6 +6,8 @@
 #include "scan.hpp"
 #include "vehicle.hpp"
 #include <algorithm>
+#include <array>
+#include <chrono>
 #include <cmath>
 #include <random>
 #include <vector>
@@ -13,11 +15,9 @@
 /**
  * LAYER 2 — closed-loop autonomy under a fixed per-frame perception budget.
  *
- * All modes trace with the fast scene BVH (identical, correct hits). The mode's
- * baked cost model decides how many azimuth rays that mode could AFFORD within
- * the budget given the obstacles currently in view. Fewer rays -> coarser
- * angular resolution -> small pillars are aliased past -> collisions. This turns
- * "faster ray tracing" into "better autonomy" as a measurable, causal claim.
+ * Each mode traces with its real implementation until the per-frame deadline.
+ * Only rays completed on time reach the planner. Fewer rays -> coarser angular
+ * resolution -> small pillars are aliased past -> collisions.
  */
 
 enum class Layer2Mode
@@ -26,6 +26,9 @@ enum class Layer2Mode
     MeshBVH,   // per-mesh BVH only, scene-level brute (still O(N))
     SceneBVH   // scene + per-mesh BVH
 };
+
+inline constexpr std::array<double, 7> layer2BudgetsMs = {
+    0.5, 1.0, 1.5, 2.0, 3.0, 5.0, 8.0};
 
 inline const char *layer2ModeName(Layer2Mode m)
 {
@@ -95,12 +98,13 @@ struct Layer2Config
     double budget_ms = 2.0;
     Layer2Mode mode = Layer2Mode::SceneBVH;
 
-    int k_min = 5;
     int k_max = 361; // full-res cap over the 180-degree arc
     double max_range = 50.0;
     double view_behind = 5.0;
 
     double dt = 1.0 / 30.0;
+    int max_observation_age_frames = 3;
+    double collision_motion_tolerance = 0.01;
     int max_frames = 6000;
     bool stop_on_crash = false;
 };
@@ -114,8 +118,23 @@ struct Layer2Result
     int collisions = 0;
     double collisions_per_100m = 0.0;
     double distance = 0.0;
+    double distance_to_first_collision = -1.0;
+    double progress = 0.0;
     double avg_k = 0.0;
+    double predicted_k = 0.0;
     double avg_in_view = 0.0;
+    double cost_ns_per_ray = 0.0;
+    double avg_scan_ms = 0.0;
+    double p95_scan_ms = 0.0;
+    double mean_overrun_ms = 0.0;
+    double max_overrun_ms = 0.0;
+    int min_k = 0;
+    int max_k = 0;
+    int frames = 0;
+    int deadline_cutoffs = 0;
+    int execution_overruns = 0;
+    bool wall_contact = false;
+    bool collision_free_completion = false;
     bool reached_end = false;
 };
 
@@ -126,6 +145,128 @@ struct Layer2World
     SceneBVH bvh;
     int tris_per_obstacle = 0;
 };
+
+inline int affordableRayCount(double budget_ns, double cost_ray_ns, int k_max)
+{
+    if (budget_ns <= 0.0 || k_max <= 0)
+        return 0;
+
+    const double affordable = std::floor(budget_ns / std::max(1.0, cost_ray_ns));
+    return static_cast<int>(std::min(affordable, static_cast<double>(k_max)));
+}
+
+inline Hit layer2ReferenceHit(const Layer2World &w, const Ray &ray, double max_distance);
+
+inline Hit layer2MeshHit(const Layer2World &w, const Ray &ray, double max_distance)
+{
+    Hit closest;
+    auto consider = [&](const Hit &h) {
+        if (h.hit && h.t <= max_distance && (!closest.hit || h.t < closest.t))
+            closest = h;
+    };
+    for (const auto &s : w.statics)
+        consider(s->intersect(ray));
+    for (const ActiveObstacle &o : w.obstacles)
+        consider(o.geometry->intersect(ray));
+    return closest;
+}
+
+inline ScanResult scanLayer2(
+    const Layer2World &world,
+    const Layer2Config &cfg,
+    const Lidar &lidar,
+    const std::vector<int> &azimuth_order)
+{
+    switch (cfg.mode)
+    {
+    case Layer2Mode::TrueBrute:
+        return scanProgressiveWithIntersector(
+            lidar, azimuth_order, cfg.k_max, [&](const Ray &ray) {
+                return layer2ReferenceHit(world, ray, cfg.max_range);
+            });
+    case Layer2Mode::MeshBVH:
+        return scanProgressiveWithIntersector(
+            lidar, azimuth_order, cfg.k_max, [&](const Ray &ray) {
+                return layer2MeshHit(world, ray, cfg.max_range);
+            });
+    case Layer2Mode::SceneBVH:
+        return scanProgressiveWithIntersector(
+            lidar, azimuth_order, cfg.k_max, [&](const Ray &ray) {
+                return world.bvh.intersect(ray, cfg.max_range);
+            });
+    }
+    return {};
+}
+
+inline ScanResult scanLayer2(
+    const Layer2World &world,
+    const Layer2Config &cfg,
+    const Lidar &lidar)
+{
+    return scanLayer2(
+        world, cfg, lidar, progressiveAzimuthOrder(cfg.k_max));
+}
+
+template <typename Now>
+inline ScanResult scanLayer2UntilDeadline(
+    const Layer2World &world,
+    const Layer2Config &cfg,
+    const Lidar &lidar,
+    const std::vector<int> &azimuth_order,
+    double budget_ns,
+    Now now)
+{
+    switch (cfg.mode)
+    {
+    case Layer2Mode::TrueBrute:
+        return scanProgressiveUntilDeadline(
+            lidar,
+            azimuth_order,
+            cfg.k_max,
+            budget_ns,
+            [&](const Ray &ray) {
+                return layer2ReferenceHit(world, ray, cfg.max_range);
+            },
+            now);
+    case Layer2Mode::MeshBVH:
+        return scanProgressiveUntilDeadline(
+            lidar,
+            azimuth_order,
+            cfg.k_max,
+            budget_ns,
+            [&](const Ray &ray) {
+                return layer2MeshHit(world, ray, cfg.max_range);
+            },
+            now);
+    case Layer2Mode::SceneBVH:
+        return scanProgressiveUntilDeadline(
+            lidar,
+            azimuth_order,
+            cfg.k_max,
+            budget_ns,
+            [&](const Ray &ray) {
+                return world.bvh.intersect(ray, cfg.max_range);
+            },
+            now);
+    }
+    return {};
+}
+
+inline ScanResult scanLayer2UntilDeadline(
+    const Layer2World &world,
+    const Layer2Config &cfg,
+    const Lidar &lidar,
+    const std::vector<int> &azimuth_order,
+    double budget_ns)
+{
+    return scanLayer2UntilDeadline(
+        world,
+        cfg,
+        lidar,
+        azimuth_order,
+        budget_ns,
+        [] { return std::chrono::steady_clock::now(); });
+}
 
 inline Layer2World makeLayer2World(const Layer2Config &cfg)
 {
@@ -174,15 +315,13 @@ inline Layer2Result runLayer2(const Layer2Config &cfg)
 {
     Layer2World world = makeLayer2World(cfg);
 
-    CostModel cost;
-    cost.tris_per_obstacle = world.tris_per_obstacle;
-
     VehicleConfig vcfg;
     vcfg.max_speed = cfg.target_speed + 1.0;
     VehicleState veh;
 
     PlannerConfig pcfg;
     pcfg.max_speed = cfg.target_speed;
+    PlannerScanState planner_scan_state(pcfg.bins);
 
     Lidar lidar;
     lidar.pose = lidarPoseFromVehicle(veh, vcfg);
@@ -192,6 +331,7 @@ inline Layer2Result runLayer2(const Layer2Config &cfg)
     lidar.maxElevation = 0.0;
     lidar.elevationSamples = 1;
     lidar.maxRange = cfg.max_range;
+    const std::vector<int> azimuth_order = progressiveAzimuthOrder(cfg.k_max);
 
     std::vector<char> hit(world.obstacles.size(), 0);
 
@@ -202,54 +342,83 @@ inline Layer2Result runLayer2(const Layer2Config &cfg)
     result.obstacles_total = static_cast<int>(world.obstacles.size());
 
     const double budget_ns = cfg.budget_ms * 1e6;
-    double sum_k = 0.0, sum_in_view = 0.0;
+    double sum_k = 0.0, sum_in_view = 0.0, sum_scan_ns = 0.0;
+    double sum_overrun_ns = 0.0;
+    std::vector<double> scan_times_ns;
+    scan_times_ns.reserve(cfg.max_frames);
     int stuck = 0;
     Vec3 prev(veh.x, veh.y, 0.0);
-
-    auto bvh_fn = [&](const Ray &ray) { return world.bvh.intersect(ray, cfg.max_range); };
 
     int frame = 0;
     for (; frame < cfg.max_frames; ++frame)
     {
-        // in_view is reported only; the cost model counts the TOTAL obstacle set
-        // because brute/mesh have no spatial culling — they test every obstacle in
-        // the scene on every ray, regardless of what is currently in view. (Choice A.)
         int in_view = 0;
         for (const ActiveObstacle &o : world.obstacles)
             if (o.x >= veh.x - cfg.view_behind && o.x <= veh.x + cfg.max_range)
                 ++in_view;
 
-        const int n_cost = static_cast<int>(world.obstacles.size());
-        const double cost_ray = cost.costRayNs(cfg.mode, n_cost);
-        int k = static_cast<int>(std::lround(budget_ns / std::max(1.0, cost_ray)));
-        k = std::clamp(k, cfg.k_min, cfg.k_max);
-
-        lidar.azimuthSamples = k;
+        lidar.azimuthSamples = cfg.k_max;
         lidar.pose = lidarPoseFromVehicle(veh, vcfg);
 
-        ScanResult scan = scanWithIntersector(lidar, bvh_fn);
-        PlannerOutput plan = planFollowTheGap(scan, pcfg, lidar.maxRange);
+        const ScanResult scan = scanLayer2UntilDeadline(
+            world, cfg, lidar, azimuth_order, budget_ns);
+        const PlannerOutput plan = planFollowTheGap(
+            scan,
+            planner_scan_state,
+            pcfg,
+            lidar.maxRange,
+            cfg.max_observation_age_frames);
 
+        const VehicleState previous_vehicle = veh;
         updateVehicle(veh, vcfg, plan.speed_command, plan.steering_command, cfg.dt);
 
-        // collision + clearance against obstacles
-        const AABB footprint = vehicleFootprintBounds(veh, vcfg);
+        bool first_collision_this_frame = false;
         for (size_t i = 0; i < world.obstacles.size(); ++i)
         {
             const ActiveObstacle &o = world.obstacles[i];
-            if (!hit[i] && intersectsAABB(footprint, o.bounds))
+            if (!hit[i] &&
+                sweptVehicleIntersectsCircle(
+                    previous_vehicle,
+                    veh,
+                    vcfg,
+                    o.center,
+                    0.5 * o.size,
+                    cfg.collision_motion_tolerance))
             {
                 hit[i] = 1;
+                first_collision_this_frame = result.collisions == 0;
                 ++result.collisions;
             }
         }
 
+        result.wall_contact = sweptVehicleTouchesCorridorWall(
+            previous_vehicle,
+            veh,
+            vcfg,
+            cfg.corridor_half_width,
+            cfg.collision_motion_tolerance);
+
         const Vec3 pos(veh.x, veh.y, 0.0);
         result.distance += (pos - prev).norm();
+        if (first_collision_this_frame)
+            result.distance_to_first_collision = result.distance;
         prev = pos;
 
-        sum_k += k;
+        sum_k += scan.rays_completed;
         sum_in_view += in_view;
+        sum_scan_ns += scan.elapsed_ns;
+        scan_times_ns.push_back(scan.elapsed_ns);
+        if (result.frames == 0)
+            result.min_k = scan.rays_completed;
+        else
+            result.min_k = std::min(result.min_k, scan.rays_completed);
+        result.max_k = std::max(result.max_k, scan.rays_completed);
+        sum_overrun_ns += scan.overrun_ns;
+        result.max_overrun_ms =
+            std::max(result.max_overrun_ms, scan.overrun_ns / 1e6);
+        result.deadline_cutoffs += scan.deadline_reached ? 1 : 0;
+        result.execution_overruns += scan.overrun_ns > 0.0 ? 1 : 0;
+        ++result.frames;
 
         if (veh.speed < 0.05)
         {
@@ -259,11 +428,8 @@ inline Layer2Result runLayer2(const Layer2Config &cfg)
         else
             stuck = 0;
 
-        // wall departure counts as failure to progress
-        if (std::abs(veh.y) > cfg.corridor_half_width)
-        {
-            veh.y = std::clamp(veh.y, -cfg.corridor_half_width, cfg.corridor_half_width);
-        }
+        if (result.wall_contact)
+            break;
 
         if (veh.x >= cfg.course_length)
         {
@@ -274,12 +440,28 @@ inline Layer2Result runLayer2(const Layer2Config &cfg)
             break;
     }
 
-    const int frames = frame + 1;
-    result.avg_k = sum_k / frames;
-    result.avg_in_view = sum_in_view / frames;
+    result.avg_k = result.frames > 0 ? sum_k / result.frames : 0.0;
+    result.avg_in_view = result.frames > 0 ? sum_in_view / result.frames : 0.0;
+    result.avg_scan_ms =
+        result.frames > 0 ? (sum_scan_ns / result.frames) / 1e6 : 0.0;
+    result.mean_overrun_ms =
+        result.execution_overruns > 0
+            ? (sum_overrun_ns / result.execution_overruns) / 1e6
+            : 0.0;
+    if (!scan_times_ns.empty())
+    {
+        std::sort(scan_times_ns.begin(), scan_times_ns.end());
+        const size_t p95_index = static_cast<size_t>(
+            std::ceil(0.95 * scan_times_ns.size()) - 1.0);
+        result.p95_scan_ms = scan_times_ns[p95_index] / 1e6;
+    }
     result.collisions_per_100m = result.distance > 1.0
                                      ? 100.0 * result.collisions / result.distance
                                      : 0.0;
+    result.progress = std::clamp(
+        veh.x / std::max(cfg.course_length, geom::Epsilon), 0.0, 1.0);
+    result.collision_free_completion =
+        result.reached_end && result.collisions == 0 && !result.wall_contact;
     return result;
 }
 
@@ -287,10 +469,10 @@ inline Layer2Result runLayer2(const Layer2Config &cfg)
  * One-time correctness gate for the Layer 2 pillar course.
  *
  * The whole thesis rests on "all modes return bit-identical hits; only latency
- * differs." The sim always traces with the scene BVH, so if SceneBVH ever
- * disagreed with ground truth over the high-poly pillars (a top-level traversal
- * bug, a degenerate AABB, a max_distance edge case) the trajectories would be
- * silently wrong. This verifies SceneBVH against a triangle-soup reference
+ * differs." If SceneBVH disagreed with ground truth over the high-poly pillars
+ * (a top-level traversal bug, a degenerate AABB, a max_distance edge case), the
+ * trajectories would not be comparable. This verifies SceneBVH against a
+ * triangle-soup reference
  * (`bruteForceIntersect`, no per-mesh BVH) — checking both the scene-level tree
  * and the per-mesh path end-to-end on the geometry that actually drives Layer 2.
  */
@@ -395,4 +577,3 @@ inline Layer2Verification verifyLayer2Course(const Layer2Config &cfg,
                              cfg.corridor_half_width, cfg.seed + 7u,
                              pose_samples, rays_per_pose);
 }
-

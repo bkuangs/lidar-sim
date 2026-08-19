@@ -31,6 +31,32 @@ struct PlannerOutput
     int gap_end = -1;
 };
 
+enum class ScanBinState
+{
+    Unobserved,
+    Clear,
+    Hit
+};
+
+struct PlannerBinObservation
+{
+    ScanBinState state = ScanBinState::Unobserved;
+    double range = 0.0;
+    int age_frames = 0;
+};
+
+struct PlannerScanState
+{
+    std::vector<PlannerBinObservation> bins;
+    int completed_rays = 0;
+    int frames = 0;
+
+    explicit PlannerScanState(int bin_count = 0)
+        : bins(std::max(0, bin_count))
+    {
+    }
+};
+
 inline double normalizeAngle(double angle)
 {
     while (angle > geom::pi)
@@ -143,12 +169,31 @@ inline PlannerOutput planFromRanges(
     return output;
 }
 
-inline PlannerOutput planFollowTheGap(
+inline void updatePlannerScanState(
     const ScanResult &scan,
+    PlannerScanState &state,
     const PlannerConfig &config,
-    double lidar_max_range)
+    double lidar_max_range,
+    int max_observation_age_frames)
 {
-    std::vector<double> ranges(config.bins, lidar_max_range);
+    if (state.bins.size() != static_cast<size_t>(config.bins))
+        state.bins.assign(std::max(0, config.bins), PlannerBinObservation{});
+
+    const int max_age = std::max(0, max_observation_age_frames);
+    for (PlannerBinObservation &bin : state.bins)
+    {
+        if (bin.state == ScanBinState::Unobserved)
+            continue;
+        ++bin.age_frames;
+        if (bin.age_frames > max_age)
+        {
+            bin.state = ScanBinState::Unobserved;
+            bin.range = 0.0;
+            bin.age_frames = 0;
+        }
+    }
+
+    std::vector<char> refreshed(state.bins.size(), 0);
 
     for (const ScanPoint &point : scan.points)
     {
@@ -160,8 +205,54 @@ inline PlannerOutput planFollowTheGap(
             continue;
 
         const int bin = angleToBin(config, angle);
-        ranges[bin] = std::min(ranges[bin], point.range);
+        PlannerBinObservation &observation = state.bins[bin];
+        if (!refreshed[bin])
+        {
+            observation.state = point.hit ? ScanBinState::Hit : ScanBinState::Clear;
+            observation.range = point.hit ? point.range : lidar_max_range;
+            refreshed[bin] = 1;
+        }
+        else if (point.hit &&
+                 (observation.state != ScanBinState::Hit ||
+                  point.range < observation.range))
+        {
+            observation.state = ScanBinState::Hit;
+            observation.range = point.range;
+        }
+        observation.age_frames = 0;
+    }
+
+    state.completed_rays = scan.rays_completed;
+    ++state.frames;
+}
+
+inline PlannerOutput planFromScanState(
+    const PlannerScanState &state,
+    const PlannerConfig &config,
+    double lidar_max_range)
+{
+    std::vector<double> ranges(std::max(0, config.bins), 0.0);
+    const size_t count = std::min(ranges.size(), state.bins.size());
+    for (size_t i = 0; i < count; ++i)
+    {
+        const PlannerBinObservation &observation = state.bins[i];
+        if (observation.state == ScanBinState::Clear)
+            ranges[i] = lidar_max_range;
+        else if (observation.state == ScanBinState::Hit)
+            ranges[i] = observation.range;
     }
 
     return planFromRanges(ranges, config);
+}
+
+inline PlannerOutput planFollowTheGap(
+    const ScanResult &scan,
+    PlannerScanState &state,
+    const PlannerConfig &config,
+    double lidar_max_range,
+    int max_observation_age_frames)
+{
+    updatePlannerScanState(
+        scan, state, config, lidar_max_range, max_observation_age_frames);
+    return planFromScanState(state, config, lidar_max_range);
 }
