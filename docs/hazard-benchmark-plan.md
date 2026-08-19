@@ -1,5 +1,13 @@
 # Controlled Hazard Benchmark Plan
 
+## Status
+
+The first-pass MVP is implemented and its published outputs pass every
+acceptance gate. The hazard benchmark has replaced the old Layer 2 benchmark and
+its tracked artifacts; Layer 1 remains. This document is retained as the
+experiment specification for the controlled straight-road hazard study, not as a
+claim about broader driving, planner, or real-time behavior.
+
 ## Goal
 
 Test one causal chain:
@@ -9,8 +17,8 @@ BVH -> more LiDAR rays within a measured budget -> earlier hazard detection
     -> more braking distance -> fewer collisions
 ```
 
-Keep the existing Layer 1 scaling benchmark. Build this benchmark alongside
-Layer 2 until the new results pass every MVP acceptance gate.
+Keep the existing Layer 1 scaling benchmark. The completed hazard benchmark is
+the replacement for Layer 2.
 
 ## Keep: First-Pass MVP
 
@@ -209,7 +217,7 @@ Emit trial-level CSV from C++. Aggregate, bootstrap, and plot in Python.
 
 ### Acceptance gates
 
-Replace Layer 2 only when:
+The completed replacement satisfies:
 
 1. Zero-ray trials collide in 100% of generated scenarios.
 2. First-frame braking and 361-ray trials safely stop in at least 99%.
@@ -226,10 +234,11 @@ Replace Layer 2 only when:
    safety result.
 8. A clean build, tests, CSV generation, and plots pass end to end.
 
-If gates 5 or 6 fail, report only acceleration and detection-latency results.
-Do not introduce another safety metric to force separation.
+If future results fail gates 5 or 6, report only acceleration and
+detection-latency results. Do not introduce another safety metric to force
+separation.
 
-### Implementation order
+### Completed implementation order
 
 1. Propagate object IDs into scan points.
 2. Define and test the phased, nested horizontal layouts.
@@ -240,9 +249,9 @@ Do not introduce another safety metric to force separation.
 7. Add aggregation, paired intervals, and plots.
 8. Run all acceptance gates.
 
-## Defer Until After MVP
+## Scope held for future experiments
 
-Do not include these in the first pass:
+These were intentionally not included in the completed first pass:
 
 - mesh-BVH as a third benchmark mode;
 - additional speeds, background-count sweeps, and mesh-complexity sweeps;
@@ -252,9 +261,6 @@ Do not include these in the first pass:
 - oriented-box collision and generalized mesh factories;
 - replacing `ActiveObstacle` with `SceneObject`;
 - simplifying `vehicle.hpp`;
-- deleting Layer 2, its cost-model tools, tests, plots, or documentation;
-- rewriting README and DESIGN around the new benchmark.
 
-After the MVP passes, add these one at a time. Remove the old Layer 2 stack only
-after the replacement results are reproducible and the documentation has been
-updated.
+Future extensions should be added one at a time and evaluated as separate
+experiments.

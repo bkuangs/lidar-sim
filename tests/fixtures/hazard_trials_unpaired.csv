@@ -1,0 +1,4 @@
+mode,scenario_id,ray_count,outcome,detected,detection_range,unbraked_ttc,stopping_margin,collision_speed
+true-brute,a,5,Collision,true,4,1,-1,2
+true-brute,b,5,Collision,true,4,1,-1,2
+scene-bvh,a,5,Collision,true,4,1,-1,2

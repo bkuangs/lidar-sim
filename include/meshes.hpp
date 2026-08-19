@@ -7,11 +7,9 @@
 /**
  * Mesh generators shared by the benchmarks.
  *
- * Layer 2 obstacles are full-height pillars so a horizontal LiDAR slice reliably
- * detects them regardless of vertical resolution — isolating azimuth aliasing
- * as the only perception variable. High triangle counts make the true
- * triangle-soup brute baseline genuinely expensive (see DESIGN.md). `makeCube`
- * is the low-poly analytic obstacle used by the Layer 1 scaling scenes.
+ * Pillars are full-height so a horizontal LiDAR slice reliably detects them
+ * regardless of vertical resolution. `makeCube` is the low-poly analytic
+ * obstacle used by the scaling scenes.
  */
 
 // Axis-aligned cube of edge `size` centered at `center` (12 triangles).
@@ -81,4 +79,3 @@ inline std::shared_ptr<TriangleMeshGeometry> makePillar(
 
     return std::make_shared<TriangleMeshGeometry>(v, t, objId);
 }
-

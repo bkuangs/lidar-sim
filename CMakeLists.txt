@@ -7,12 +7,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # The whole project is headless and depends only on Eigen. (The old Open3D
-# real-time demo was removed in the cleanup; ray tracing, both benchmark layers,
-# the calibration probe, and the tests are all Open3D-free.)
+# real-time demo was removed in the cleanup; ray tracing, benchmarks, and tests
+# are all Open3D-free.)
 find_package(Eigen3 REQUIRED)
 
-# This is a latency benchmark: an unoptimized build produces meaningless timings
-# and would not reproduce the -O2 cost-model calibration baked into layer2.hpp.
+# This is a latency benchmark: an unoptimized build produces meaningless timings.
 # Optimize by default (CMake adds no -O flags otherwise).
 add_compile_options(-O2)
 
@@ -27,12 +26,44 @@ target_link_libraries(lidar3d INTERFACE Eigen3::Eigen)
 
 add_executable(lidar_tests         tests/tests.cpp)
 add_executable(lidar_scaling       benchmarks/scaling.cpp)          # Layer 1: latency vs obstacle count
-add_executable(calibrate           benchmarks/calibrate.cpp)        # fits the Layer 2 cost model
-add_executable(layer2_benchmark    benchmarks/layer2_benchmark.cpp) # Layer 2: autonomy vs budget
-add_executable(validate_cost_model benchmarks/validate_cost_model.cpp)
+add_executable(hazard_benchmark    benchmarks/hazard_benchmark.cpp)
 
-foreach(tgt lidar_tests lidar_scaling calibrate layer2_benchmark validate_cost_model)
+foreach(tgt lidar_tests lidar_scaling hazard_benchmark)
+    target_link_libraries(${tgt} PRIVATE lidar3d)
+endforeach()
+
+add_executable(nested_ray_layouts_test tests/nested_ray_layouts.cpp)
+add_executable(object_id_propagation_tests tests/object_id_propagation.cpp)
+add_executable(hazard_trial_tests tests/hazard_trial_tests.cpp)
+add_executable(hazard_benchmark_tests tests/hazard_benchmark_tests.cpp)
+
+foreach(tgt nested_ray_layouts_test object_id_propagation_tests hazard_trial_tests hazard_benchmark_tests)
     target_link_libraries(${tgt} PRIVATE lidar3d)
 endforeach()
 
 add_test(NAME lidar_tests COMMAND lidar_tests)
+add_test(NAME nested_ray_layouts COMMAND nested_ray_layouts_test)
+add_test(NAME object_id_propagation COMMAND object_id_propagation_tests)
+add_test(NAME hazard_trial COMMAND hazard_trial_tests)
+add_test(NAME hazard_benchmark_helpers COMMAND hazard_benchmark_tests)
+
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_test(
+    NAME hazard_analysis
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hazard_analysis.py)
+
+set(HAZARD_MVP_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/hazard_mvp)
+add_custom_target(
+    hazard_mvp
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${HAZARD_MVP_OUTPUT_DIR}
+    COMMAND $<TARGET_FILE:hazard_benchmark>
+            safety --csv ${HAZARD_MVP_OUTPUT_DIR}/hazard_trials.csv
+    COMMAND $<TARGET_FILE:hazard_benchmark>
+            timing --csv ${HAZARD_MVP_OUTPUT_DIR}/hazard_timing.csv
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/analyze_hazard.py
+            --trials ${HAZARD_MVP_OUTPUT_DIR}/hazard_trials.csv
+            --timing ${HAZARD_MVP_OUTPUT_DIR}/hazard_timing.csv
+            --out-dir ${HAZARD_MVP_OUTPUT_DIR}/analysis
+    DEPENDS hazard_benchmark
+    USES_TERMINAL
+    COMMENT "Running the end-to-end hazard MVP acceptance gates")

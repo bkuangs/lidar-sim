@@ -1,0 +1,11 @@
+mode,ray_count,median_ms,p95_ms
+true-brute,0,0.05,0.10
+true-brute,5,0.25,0.40
+true-brute,9,0.70,0.90
+true-brute,17,1.50,1.90
+true-brute,361,8.00,10.00
+scene-bvh,0,0.02,0.05
+scene-bvh,5,0.05,0.10
+scene-bvh,9,0.10,0.20
+scene-bvh,17,0.20,0.40
+scene-bvh,361,3.00,4.00

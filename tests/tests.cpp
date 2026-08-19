@@ -1,18 +1,20 @@
-#include "layer2.hpp"        // Layer 2 world/loop + scene-vs-soup verification
-#include "metrics.hpp"
 #include "accelerated_scene.hpp" // XBucketScene for Layer 1 equivalence
+#include "planner.hpp"
 #include "scene.hpp"         // linear-scan reference
+#include "scene_bvh.hpp"
 #include "meshes.hpp"
+#include "vehicle.hpp"
 #include <cassert>
 #include <cmath>
 #include <iostream>
+#include <random>
 
 bool near(double a, double b, double eps = 1e-9)
 {
     return std::abs(a - b) <= eps;
 }
 
-// --- shared building blocks (still exercised by both layers) -----------------
+// --- shared building blocks ---------------------------------------------------
 
 void testVehicleDynamics()
 {
@@ -108,7 +110,7 @@ void testPartialScanState()
     ScanResult clear_scan;
     clear_scan.rays_requested = 1;
     clear_scan.rays_completed = 1;
-    clear_scan.points.push_back(ScanPoint{0.0, 0.0, 20.0, false});
+    clear_scan.points.push_back(ScanPoint{0.0, 0.0, 20.0, -1, false});
 
     PlannerOutput output =
         planFollowTheGap(clear_scan, state, config, 20.0, 3);
@@ -134,7 +136,7 @@ void testPartialScanState()
     ScanResult hit_scan;
     hit_scan.rays_requested = 1;
     hit_scan.rays_completed = 1;
-    hit_scan.points.push_back(ScanPoint{0.0, 0.0, 0.5, true});
+    hit_scan.points.push_back(ScanPoint{0.0, 0.0, 0.5, 7, true});
     output = planFollowTheGap(hit_scan, state, config, 20.0, 3);
     assert(output.blocked);
     assert(state.bins[center].state == ScanBinState::Hit);
@@ -162,6 +164,7 @@ void testScanRecordsClearRays()
     {
         assert(!point.hit);
         assert(near(point.range, lidar.maxRange));
+        assert(point.object_id == -1);
     }
 }
 
@@ -195,124 +198,6 @@ void testProgressiveRayOrder()
             static_cast<int>(std::ceil(360.0 / (prefix - 1)));
         assert(maxProgressiveGap(order, prefix) <= ideal_gap);
     }
-
-    Lidar lidar;
-    lidar.minAzimuth = -90.0 * geom::deg;
-    lidar.maxAzimuth = 90.0 * geom::deg;
-    lidar.azimuthSamples = 5;
-    lidar.minElevation = 0.0;
-    lidar.maxElevation = 0.0;
-    lidar.elevationSamples = 1;
-
-    const ScanResult scan = scanProgressiveWithIntersector(
-        lidar, order, 361, [](const Ray &) { return Hit{}; });
-    assert(scan.points.size() == 5);
-    assert(near(scan.points[0].azimuth, 0.0));
-    assert(near(scan.points[1].azimuth, -90.0 * geom::deg));
-    assert(near(scan.points[2].azimuth, 90.0 * geom::deg));
-    assert(near(scan.points[3].azimuth, -45.0 * geom::deg));
-    assert(near(scan.points[4].azimuth, 45.0 * geom::deg));
-}
-
-void testDeadlineScanner()
-{
-    using Clock = std::chrono::steady_clock;
-    using TimePoint = Clock::time_point;
-
-    Lidar lidar;
-    lidar.minAzimuth = -90.0 * geom::deg;
-    lidar.maxAzimuth = 90.0 * geom::deg;
-    lidar.azimuthSamples = 361;
-    lidar.minElevation = 0.0;
-    lidar.maxElevation = 0.0;
-    lidar.elevationSamples = 1;
-
-    const std::vector<int> order = progressiveAzimuthOrder(361);
-    const std::vector<long long> ticks = {0, 3, 7, 12};
-    size_t tick = 0;
-    int intersections = 0;
-    const ScanResult scan = scanProgressiveUntilDeadline(
-        lidar,
-        order,
-        361,
-        10.0,
-        [&](const Ray &) {
-            ++intersections;
-            return Hit{};
-        },
-        [&] {
-            return TimePoint(std::chrono::nanoseconds(ticks.at(tick++)));
-        });
-
-    assert(scan.rays_requested == 361);
-    assert(scan.rays_attempted == 3);
-    assert(scan.rays_completed == 2);
-    assert(scan.points.size() == 2);
-    assert(intersections == 3);
-    assert(scan.deadline_reached);
-    assert(near(scan.elapsed_ns, 12.0));
-    assert(near(scan.overrun_ns, 2.0));
-    assert(near(scan.points[0].azimuth, 0.0));
-    assert(near(scan.points[1].azimuth, -90.0 * geom::deg));
-
-    const std::vector<long long> boundary_ticks = {0, 10};
-    tick = 0;
-    const ScanResult boundary = scanProgressiveUntilDeadline(
-        lidar,
-        order,
-        361,
-        10.0,
-        [](const Ray &) { return Hit{}; },
-        [&] {
-            return TimePoint(
-                std::chrono::nanoseconds(boundary_ticks.at(tick++)));
-        });
-    assert(boundary.rays_attempted == 1);
-    assert(boundary.rays_completed == 1);
-    assert(boundary.deadline_reached);
-    assert(near(boundary.overrun_ns, 0.0));
-
-    lidar.azimuthSamples = 3;
-    const std::vector<long long> capped_ticks = {0, 1, 2, 3};
-    tick = 0;
-    const ScanResult capped = scanProgressiveUntilDeadline(
-        lidar,
-        order,
-        361,
-        10.0,
-        [](const Ray &) { return Hit{}; },
-        [&] {
-            return TimePoint(
-                std::chrono::nanoseconds(capped_ticks.at(tick++)));
-        });
-    assert(capped.rays_attempted == 3);
-    assert(capped.rays_completed == 3);
-    assert(!capped.deadline_reached);
-    assert(near(capped.elapsed_ns, 3.0));
-}
-
-void testPairedAllSeedMetrics()
-{
-    const std::vector<char> outcomes = {1, 0, 1, 0};
-    const std::vector<char> reference = {0, 0, 1, 0};
-    const PairedBinaryBootstrap summary =
-        pairedBinaryBootstrap(outcomes, reference, 2000, 42);
-
-    assert(summary.samples == 4);
-    assert(near(summary.rate_pct, 50.0));
-    assert(near(summary.delta_pct, 25.0));
-    assert(summary.rate_low_pct <= summary.rate_pct);
-    assert(summary.rate_high_pct >= summary.rate_pct);
-    assert(summary.delta_low_pct <= summary.delta_pct);
-    assert(summary.delta_high_pct >= summary.delta_pct);
-
-    const std::vector<char> failed = {0, 0, 0, 0};
-    const PairedBinaryBootstrap failed_summary =
-        pairedBinaryBootstrap(failed, reference, 2000, 7);
-    assert(failed_summary.samples == 4);
-    assert(near(failed_summary.rate_pct, 0.0));
-    assert(near(failed_summary.rate_low_pct, 0.0));
-    assert(near(failed_summary.rate_high_pct, 0.0));
 }
 
 // --- Layer 1 claim: accelerators return identical hits to the linear scan ----
@@ -386,98 +271,6 @@ void testLayer1Equivalence()
     assert(rays > 0);
 }
 
-// --- Layer 2 claim: every timed tracer returns the same scan ------------------
-
-void testLayer2SceneVerification()
-{
-    Layer2Config cfg;
-    cfg.seed = 1234;
-    const Layer2Verification v = verifyLayer2Course(cfg);
-    assert(v.rays > 0);
-    assert(v.passed());
-}
-
-void testLayer2Determinism()
-{
-    Layer2Config cfg;
-    cfg.seed = 777;
-    const Layer2World a = makeLayer2World(cfg);
-    const Layer2World b = makeLayer2World(cfg);
-    assert(a.obstacles.size() == b.obstacles.size());
-    assert(a.tris_per_obstacle == b.tris_per_obstacle);
-    for (size_t i = 0; i < a.obstacles.size(); ++i)
-    {
-        assert(near(a.obstacles[i].x, b.obstacles[i].x));
-        assert((a.obstacles[i].center - b.obstacles[i].center).norm() < 1e-12);
-        assert(a.obstacles[i].object_id == b.obstacles[i].object_id);
-    }
-}
-
-void testLayer2ModeScans()
-{
-    Layer2Config cfg;
-    cfg.seed = 2468;
-    const Layer2World world = makeLayer2World(cfg);
-
-    VehicleConfig vehicle_config;
-    VehicleState vehicle;
-    vehicle.x = 20.0;
-    vehicle.y = 0.5;
-    vehicle.heading = 5.0 * geom::deg;
-
-    Lidar lidar;
-    lidar.pose = lidarPoseFromVehicle(vehicle, vehicle_config);
-    lidar.minAzimuth = -90.0 * geom::deg;
-    lidar.maxAzimuth = 90.0 * geom::deg;
-    lidar.minElevation = 0.0;
-    lidar.maxElevation = 0.0;
-    lidar.elevationSamples = 1;
-    lidar.azimuthSamples = 31;
-    lidar.maxRange = cfg.max_range;
-
-    cfg.mode = Layer2Mode::TrueBrute;
-    const ScanResult brute = scanLayer2(world, cfg, lidar);
-    cfg.mode = Layer2Mode::MeshBVH;
-    const ScanResult mesh = scanLayer2(world, cfg, lidar);
-    cfg.mode = Layer2Mode::SceneBVH;
-    const ScanResult scene = scanLayer2(world, cfg, lidar);
-
-    assert(brute.points.size() == mesh.points.size());
-    assert(brute.points.size() == scene.points.size());
-    for (size_t i = 0; i < brute.points.size(); ++i)
-    {
-        assert(near(brute.points[i].azimuth, mesh.points[i].azimuth));
-        assert(near(brute.points[i].azimuth, scene.points[i].azimuth));
-        assert(near(brute.points[i].range, mesh.points[i].range, 1e-6));
-        assert(near(brute.points[i].range, scene.points[i].range, 1e-6));
-    }
-}
-
-void testLayer2Budget()
-{
-    assert(affordableRayCount(499.0, 100.0, 361) == 4);
-    assert(affordableRayCount(99.0, 100.0, 361) == 0);
-    assert(affordableRayCount(100000.0, 100.0, 361) == 361);
-
-    for (Layer2Mode mode : {Layer2Mode::TrueBrute, Layer2Mode::SceneBVH})
-    {
-        Layer2Config cfg;
-        cfg.mode = mode;
-        cfg.budget_ms = 0.0;
-        cfg.max_frames = 1;
-        const Layer2Result result = runLayer2(cfg);
-        assert(result.mode == mode);
-        assert(result.frames == 1);
-        assert(near(result.avg_k, 0.0));
-        assert(result.min_k == 0);
-        assert(result.max_k == 0);
-        assert(near(result.distance, 0.0));
-        assert(near(result.progress, 0.0));
-        assert(near(result.distance_to_first_collision, -1.0));
-        assert(!result.collision_free_completion);
-    }
-}
-
 int main()
 {
     testVehicleDynamics();
@@ -486,13 +279,7 @@ int main()
     testPartialScanState();
     testScanRecordsClearRays();
     testProgressiveRayOrder();
-    testDeadlineScanner();
-    testPairedAllSeedMetrics();
     testLayer1Equivalence();
-    testLayer2SceneVerification();
-    testLayer2Determinism();
-    testLayer2ModeScans();
-    testLayer2Budget();
 
     std::cout << "All lidar_3d tests passed\n";
     return 0;

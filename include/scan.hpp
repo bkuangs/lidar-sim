@@ -1,22 +1,25 @@
 #pragma once
 #include <algorithm>
-#include <chrono>
+#include <array>
 #include <cmath>
+#include <optional>
+#include <stdexcept>
 #include <vector>
 #include <Eigen/Dense>
 #include "lidar.hpp"
 
 using Vec3 = Eigen::Vector3d;
 
-// The follow-the-gap planner only needs a per-ray polar range: it slices by
-// elevation, bins by azimuth, and keeps the nearest range per bin. The full
-// point cloud (world/sensor coords, normals, intensity, per-object hit counts)
-// was only ever consumed by the retired real-time viewer, so it is not built.
+// The follow-the-gap planner needs a per-ray polar range and object identity:
+// it slices by elevation, bins by azimuth, and keeps the nearest range per bin.
+// The full point cloud (world/sensor coords, normals, intensity) was only ever
+// consumed by the retired real-time viewer, so it is not built.
 struct ScanPoint
 {
     double azimuth;
     double elevation;
     double range;
+    int object_id;
     bool hit;
 };
 
@@ -24,12 +27,28 @@ struct ScanResult
 {
     std::vector<ScanPoint> points;
     int rays_requested = 0;
-    int rays_attempted = 0;
     int rays_completed = 0;
-    double elapsed_ns = 0.0;
-    double overrun_ns = 0.0;
-    bool deadline_reached = false;
 };
+
+inline std::optional<double> scanRangeForObjectId(
+    const ScanResult &scan, int object_id)
+{
+    std::optional<double> nearest_range;
+    for (const ScanPoint &point : scan.points)
+    {
+        if (point.hit && point.object_id == object_id &&
+            (!nearest_range || point.range < *nearest_range))
+        {
+            nearest_range = point.range;
+        }
+    }
+    return nearest_range;
+}
+
+inline bool scanContainsObjectId(const ScanResult &scan, int object_id)
+{
+    return scanRangeForObjectId(scan, object_id).has_value();
+}
 
 inline std::vector<int> progressiveAzimuthOrder(int sample_count)
 {
@@ -75,6 +94,36 @@ inline std::vector<int> progressiveAzimuthOrder(int sample_count)
     return order;
 }
 
+inline constexpr int nestedHorizontalRayLayoutBins = 361;
+inline constexpr std::array<int, 9> nestedHorizontalRayLayoutCounts = {
+    0, 5, 9, 17, 33, 65, 129, 257, 361};
+
+inline std::vector<double> nestedHorizontalRayLayout(int ray_count, double phase)
+{
+    if (!std::isfinite(phase) || phase < 0.0 || phase >= 1.0)
+        throw std::invalid_argument("phase must be in [0, 1)");
+    if (std::find(
+            nestedHorizontalRayLayoutCounts.begin(),
+            nestedHorizontalRayLayoutCounts.end(),
+            ray_count) == nestedHorizontalRayLayoutCounts.end())
+        throw std::invalid_argument("unsupported nested horizontal ray count");
+
+    const std::vector<int> order =
+        progressiveAzimuthOrder(nestedHorizontalRayLayoutBins);
+    std::vector<double> azimuths;
+    azimuths.reserve(ray_count);
+    for (int rank = 0; rank < ray_count; ++rank)
+    {
+        const int index = order[rank];
+        azimuths.push_back(
+            (-90.0 +
+             (static_cast<double>(index) + phase) * 180.0 /
+                 nestedHorizontalRayLayoutBins) *
+            geom::deg);
+    }
+    return azimuths;
+}
+
 inline double lidarElevation(const Lidar &lidar, int sample_index)
 {
     const double fraction =
@@ -83,19 +132,6 @@ inline double lidarElevation(const Lidar &lidar, int sample_index)
             : 0.0;
     return lidar.minElevation +
            fraction * (lidar.maxElevation - lidar.minElevation);
-}
-
-inline double progressiveAzimuth(
-    const Lidar &lidar,
-    int sample_index,
-    int grid_samples)
-{
-    const double fraction =
-        grid_samples > 1
-            ? static_cast<double>(sample_index) / (grid_samples - 1)
-            : 0.5;
-    return lidar.minAzimuth +
-           fraction * (lidar.maxAzimuth - lidar.minAzimuth);
 }
 
 template <typename Intersector>
@@ -121,6 +157,7 @@ ScanPoint traceScanPoint(
         azimuth,
         elevation,
         valid_hit ? hit.t : lidar.maxRange,
+        valid_hit ? hit.objId : -1,
         valid_hit,
     };
 }
@@ -152,108 +189,19 @@ ScanResult scanWithIntersector(const Lidar &lidar, Intersector intersect)
     return scan;
 }
 
-template <typename Intersector, typename Now>
-ScanResult scanProgressiveUntilDeadline(
-    const Lidar &lidar,
-    const std::vector<int> &azimuth_order,
-    int grid_samples,
-    double budget_ns,
-    Intersector intersect,
-    Now now)
-{
-    const auto start = now();
-    ScanResult scan;
-    if (grid_samples <= 0 || lidar.elevationSamples <= 0)
-        return scan;
-
-    const int selected_samples = std::min(
-        std::max(0, lidar.azimuthSamples),
-        static_cast<int>(azimuth_order.size()));
-    scan.rays_requested = selected_samples * lidar.elevationSamples;
-    scan.points.reserve(scan.rays_requested);
-
-    if (budget_ns <= 0.0)
-    {
-        scan.deadline_reached = true;
-        return scan;
-    }
-
-    using TimePoint = decltype(start);
-    using Duration = typename TimePoint::duration;
-    const auto deadline =
-        start + std::chrono::duration_cast<Duration>(
-                    std::chrono::duration<double, std::nano>(budget_ns));
-
-    for (int v = 0; v < lidar.elevationSamples; ++v)
-    {
-        const double elevation = lidarElevation(lidar, v);
-
-        for (int rank = 0; rank < selected_samples; ++rank)
-        {
-            const int sample_index = azimuth_order[rank];
-            const double azimuth =
-                progressiveAzimuth(lidar, sample_index, grid_samples);
-            scan.points.push_back(
-                traceScanPoint(lidar, azimuth, elevation, intersect));
-            ++scan.rays_attempted;
-
-            const auto completed_at = now();
-            scan.elapsed_ns =
-                std::chrono::duration<double, std::nano>(completed_at - start).count();
-            if (completed_at > deadline)
-            {
-                scan.points.pop_back();
-                scan.overrun_ns =
-                    std::chrono::duration<double, std::nano>(
-                        completed_at - deadline)
-                        .count();
-                scan.deadline_reached = true;
-                return scan;
-            }
-
-            ++scan.rays_completed;
-            if (completed_at == deadline)
-            {
-                scan.deadline_reached = true;
-                return scan;
-            }
-        }
-    }
-
-    return scan;
-}
-
 template <typename Intersector>
-ScanResult scanProgressiveWithIntersector(
+ScanResult scanFixedHorizontalWithIntersector(
     const Lidar &lidar,
-    const std::vector<int> &azimuth_order,
-    int grid_samples,
+    const std::vector<double> &azimuths,
     Intersector intersect)
 {
     ScanResult scan;
-    if (grid_samples <= 0 || lidar.elevationSamples <= 0)
-        return scan;
-
-    const int selected_samples = std::min(
-        std::max(0, lidar.azimuthSamples),
-        static_cast<int>(azimuth_order.size()));
-    scan.rays_requested = selected_samples * lidar.elevationSamples;
-    scan.points.reserve(scan.rays_requested);
-
-    for (int v = 0; v < lidar.elevationSamples; ++v)
+    scan.rays_requested = static_cast<int>(azimuths.size());
+    scan.points.reserve(azimuths.size());
+    for (const double azimuth : azimuths)
     {
-        const double elevation = lidarElevation(lidar, v);
-
-        for (int rank = 0; rank < selected_samples; ++rank)
-        {
-            const int sample_index = azimuth_order[rank];
-            const double azimuth =
-                progressiveAzimuth(lidar, sample_index, grid_samples);
-            scan.points.push_back(
-                traceScanPoint(lidar, azimuth, elevation, intersect));
-            ++scan.rays_completed;
-        }
+        scan.points.push_back(traceScanPoint(lidar, azimuth, 0.0, intersect));
+        ++scan.rays_completed;
     }
-
     return scan;
 }

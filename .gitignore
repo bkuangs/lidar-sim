@@ -8,7 +8,6 @@ CODEX.md
 /build*/
 /scaling.csv
 /.venv/
-/layer2.csv
 /docs/*
 !/docs/hazard-benchmark-plan.md
 !/docs/ideas/

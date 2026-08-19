@@ -25,8 +25,7 @@
  *
  * NOTE: "linear-scan" here is NOT triangle-soup brute force. Obstacles are
  * analytic spheres / 12-tri cubes, so per-object cost is tiny — this isolates
- * scene-level scaling (N vs log N), not per-object triangle cost. Layer 2's
- * "true-brute" is the separate triangle-soup baseline.
+ * scene-level scaling (N vs log N), not per-object triangle cost.
  *
  * Output: a table plus a CSV (N, mode, build_ms, query_ms, ns_per_ray, ...).
  */
