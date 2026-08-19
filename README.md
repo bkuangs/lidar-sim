@@ -48,6 +48,17 @@ Generate the fixed-1x object-count extension separately with:
   --out-dir plots/hazard_object_count_analysis
 ```
 
+Generate the matched complexity-by-object-count matrix separately with:
+
+```bash
+./build/hazard_benchmark complexity-object-count-timing \
+  --csv plots/hazard_complexity_object_count_timing.csv
+./.venv/bin/python tools/analyze_complexity_object_count.py \
+  --trials plots/hazard_trials.csv \
+  --timing plots/hazard_complexity_object_count_timing.csv \
+  --out-dir plots/hazard_complexity_object_count_analysis
+```
+
 `hazard_trials.csv` has every fixed-ray scenario outcome. `hazard_timing.csv`
 has 81 median/p95 rows for 3 geometry-preserving mesh complexities, 3 tracer
 modes, and 9 ray counts. The analyzer writes safety summaries, paired
@@ -56,6 +67,9 @@ summary, and acceptance gates under `plots/hazard_analysis/`. Use `python3` in
 place of `.venv/bin/python` when no project virtual environment is available.
 The object-count extension writes a separate 135-row timing CSV and separate
 analysis directory; it does not regenerate either prior publication.
+The matched matrix likewise writes a separate 243-row timing CSV and analysis
+directory, reusing the fixed-ray safety trials once without joining timing values
+from either separate sweep.
 
 ## Published Results
 
@@ -146,3 +160,36 @@ and
 [`hazard_object_count_timing_inversions.csv`](plots/hazard_object_count_analysis/hazard_object_count_timing_inversions.csv).
 Detailed timing and budget attribution are in the same directory. These remain
 machine-specific p95 estimates, not hard real-time guarantees.
+
+### Joint mesh-complexity and object-count interactions
+<img src="plots/hazard_complexity_object_count_analysis/hazard_complexity_object_count_interactions.png" alt="Per-mesh and scene-level p95 speedups across the matched mesh-complexity and object-count matrix" width="100%" />
+
+This matched extension measures all **nine** `1x/4x/16x × 25/100/400` cells in
+one fresh timing batch. It retains the exact coplanar mesh subdivision,
+deterministic nested fixed-domain scenes, 32 poses/layouts, three tracers, nine
+ray counts, 20 warmups, and 200 measurements. It reuses the unchanged safety
+trials once and does not join timing values from either separate sweep.
+
+**Measured answer: joint interactions change only the scene-level conclusion.**
+Mesh-BVH p95 remains lower than true-brute at every nonzero ray count in all nine
+cells. Scene-BVH remains lower than mesh-BVH at every nonzero ray count in five
+cells: every 100/400-object cell except `16x/100`. It is mixed at all three
+25-object cells and at `16x/100`, with six adverse comparisons total. The
+exceptions are `1x/25` at 33 rays, `4x/25` at 129, `16x/25` at 9/33/65, and
+`16x/100` at 257. Thus per-mesh acceleration is robust to the joint factors;
+scene-level acceleration is strongly beneficial at moderate/high counts but its
+overhead can erase the gain in low-count or isolated noisy corners.
+
+At 361 rays, true-brute → mesh-BVH → scene-BVH p95 ranges from
+**5.997 → 0.210 → 0.210 ms** at `1x/25` to
+**3436.750 → 3.603 → 0.373 ms** at `16x/400`. Per-mesh speedup spans
+**24.7x–953.9x** across cells at that ray count; incremental scene-level speedup
+spans **1.00x–12.36x**. At 0.5 ms, scene-BVH maps to 361 rays in every cell,
+while mesh-BVH maps to 9–361 and true-brute to 0–9, depending on the factors.
+
+The publication retains all **10 ray-axis, 40 complexity-axis, and 14
+object-count-axis** adjacent p95 decreases. Detailed values, all six adverse
+comparisons, per-cell convergence, and every gate are in
+[`plots/hazard_complexity_object_count_analysis/`](plots/hazard_complexity_object_count_analysis/).
+These are descriptive machine-specific p95 estimates, not a fitted interaction
+model or hard real-time guarantees.

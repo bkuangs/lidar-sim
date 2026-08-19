@@ -1,0 +1,25 @@
+gate,status,detail
+matrix_cell_integrity,PASS,exactly 9 declared complexity/object-count cells with 120/480/1920 triangles per object
+tracer_parity,PASS,"the benchmark verifies hit, object-ID, and range parity for all 32 poses and 9 layouts before timing each cell"
+timing_methodology,PASS,20 warmups and 200 measurements per row; world and BVH construction remain outside timing
+timing_completeness,PASS,243 rows = 3 complexities x 3 object counts x 3 modes x 9 ray counts
+fixed_ray_safety_curve,PASS,all timing cells and modes reuse one paired mode-independent safe-stop curve
+descriptive_result_1x_25,INFO,ONE_OR_MORE_TRANSITIONS_MIXED_OR_REGRESSED; 1 nonzero adverse/equal comparison(s)
+convergence_1x_25,PASS,"6.59698 ms maps to true-brute=361, mesh-bvh=361, scene-bvh=361 rays"
+descriptive_result_1x_100,INFO,BOTH_TRANSITIONS_IMPROVED_AT_ALL_NONZERO_RAYS; 0 nonzero adverse/equal comparison(s)
+convergence_1x_100,PASS,"26.6588 ms maps to true-brute=361, mesh-bvh=361, scene-bvh=361 rays"
+descriptive_result_1x_400,INFO,BOTH_TRANSITIONS_IMPROVED_AT_ALL_NONZERO_RAYS; 0 nonzero adverse/equal comparison(s)
+convergence_1x_400,PASS,"205.229 ms maps to true-brute=361, mesh-bvh=361, scene-bvh=361 rays"
+descriptive_result_4x_25,INFO,ONE_OR_MORE_TRANSITIONS_MIXED_OR_REGRESSED; 1 nonzero adverse/equal comparison(s)
+convergence_4x_25,PASS,"33.6893 ms maps to true-brute=361, mesh-bvh=361, scene-bvh=361 rays"
+descriptive_result_4x_100,INFO,BOTH_TRANSITIONS_IMPROVED_AT_ALL_NONZERO_RAYS; 0 nonzero adverse/equal comparison(s)
+convergence_4x_100,PASS,"114.48 ms maps to true-brute=361, mesh-bvh=361, scene-bvh=361 rays"
+descriptive_result_4x_400,INFO,BOTH_TRANSITIONS_IMPROVED_AT_ALL_NONZERO_RAYS; 0 nonzero adverse/equal comparison(s)
+convergence_4x_400,PASS,"691.41 ms maps to true-brute=361, mesh-bvh=361, scene-bvh=361 rays"
+descriptive_result_16x_25,INFO,ONE_OR_MORE_TRANSITIONS_MIXED_OR_REGRESSED; 3 nonzero adverse/equal comparison(s)
+convergence_16x_25,PASS,"136.582 ms maps to true-brute=361, mesh-bvh=361, scene-bvh=361 rays"
+descriptive_result_16x_100,INFO,ONE_OR_MORE_TRANSITIONS_MIXED_OR_REGRESSED; 1 nonzero adverse/equal comparison(s)
+convergence_16x_100,PASS,"487.704 ms maps to true-brute=361, mesh-bvh=361, scene-bvh=361 rays"
+descriptive_result_16x_400,INFO,BOTH_TRANSITIONS_IMPROVED_AT_ALL_NONZERO_RAYS; 0 nonzero adverse/equal comparison(s)
+convergence_16x_400,PASS,"3780.42 ms maps to true-brute=361, mesh-bvh=361, scene-bvh=361 rays"
+timing_inversions,INFO,"10 ray-count, 40 complexity, and 14 object-count adjacent p95 decrease(s) reported without smoothing"
