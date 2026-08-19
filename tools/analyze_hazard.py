@@ -376,8 +376,8 @@ def prepare_budget_plot_data(summary, mappings, budget_differences):
     return mapped_rates, sorted(safe_differences, key=lambda row: row["plot_budget_ms"])
 
 
-def prepare_fixed_ray_safety(summary):
-    """Return one safe-stop curve after verifying equal-ray mode independence."""
+def prepare_fixed_ray_safety(summary, grouped):
+    """Return one curve after verifying paired equal-ray outcomes across modes."""
     by_mode = defaultdict(dict)
     for row in summary:
         if row["metric"] == "safe_stop_rate":
@@ -391,12 +391,26 @@ def prepare_fixed_ray_safety(summary):
         if values.keys() != reference.keys():
             raise ValidationError(
                 f"fixed-ray safe-stop counts differ between {reference_mode} and {mode}")
-        for ray_count, estimate in values.items():
-            if not math.isclose(
-                    estimate, reference[ray_count], rel_tol=0.0, abs_tol=1e-12):
+        for ray_count in values:
+            reference_outcomes = {
+                row["scenario_id"]: row["outcome"]
+                for row in grouped[(reference_mode, ray_count)]
+            }
+            outcomes = {
+                row["scenario_id"]: row["outcome"]
+                for row in grouped[(mode, ray_count)]
+            }
+            if reference_outcomes.keys() != outcomes.keys():
                 raise ValidationError(
-                    f"fixed-ray safe-stop rate differs at {ray_count} rays "
+                    f"fixed-ray scenarios differ at {ray_count} rays "
                     f"between {reference_mode} and {mode}")
+            mismatches = sum(
+                reference_outcomes[scenario_id] != outcomes[scenario_id]
+                for scenario_id in reference_outcomes)
+            if mismatches:
+                raise ValidationError(
+                    f"fixed-ray outcomes differ for {mismatches} paired scenarios "
+                    f"at {ray_count} rays between {reference_mode} and {mode}")
     return [
         {"ray_count": ray_count, "safe_stop_rate": reference[ray_count]}
         for ray_count in sorted(reference)
@@ -560,7 +574,7 @@ def _write_csv(path, rows, fields):
         writer.writerows(rows)
 
 
-def plot(summary, mappings, budget_differences, convergence_budget, out_dir):
+def plot(summary, grouped, mappings, budget_differences, convergence_budget, out_dir):
     """Render the direct budget result and secondary fixed-ray diagnostics."""
     try:
         import matplotlib
@@ -575,7 +589,7 @@ def plot(summary, mappings, budget_differences, convergence_budget, out_dir):
     def mode_style(mode):
         return STYLE.get(mode, dict(label=mode, color="gray", marker="x"))
 
-    fixed_ray_safety = prepare_fixed_ray_safety(summary)
+    fixed_ray_safety = prepare_fixed_ray_safety(summary, grouped)
     fig, ax = plt.subplots(figsize=(7, 4.5))
     ax.plot([row["ray_count"] for row in fixed_ray_safety],
             [row["safe_stop_rate"] for row in fixed_ray_safety],
@@ -769,7 +783,7 @@ def analyze(trials_path, timing_path, out_dir, convergence_budget_ms=None, make_
     _write_csv(os.path.join(out_dir, "hazard_acceptance_gates.csv"), gates,
                ("gate", "status", "detail"))
     if make_plots:
-        plot(summary, mappings, budget_differences, convergence_budget, out_dir)
+        plot(summary, grouped, mappings, budget_differences, convergence_budget, out_dir)
     return {"summary": summary, "mappings": mappings, "paired": paired,
             "budget_differences": budget_differences, "gates": gates}
 

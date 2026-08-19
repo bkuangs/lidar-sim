@@ -111,8 +111,8 @@ class HazardAnalysisTest(unittest.TestCase):
 
     def test_fixed_ray_plot_data_is_one_mode_independent_curve(self):
         trials = analyze_hazard.read_trials(os.path.join(FIXTURES, "hazard_trials.csv"))
-        summary, _ = analyze_hazard.summarize_trials(trials)
-        curve = analyze_hazard.prepare_fixed_ray_safety(summary)
+        summary, grouped = analyze_hazard.summarize_trials(trials)
+        curve = analyze_hazard.prepare_fixed_ray_safety(summary, grouped)
         expected_ray_counts = sorted({
             row["ray_count"] for row in summary
             if row["metric"] == "safe_stop_rate"
@@ -120,14 +120,26 @@ class HazardAnalysisTest(unittest.TestCase):
         self.assertEqual(expected_ray_counts, [row["ray_count"] for row in curve])
         self.assertTrue(all("mode" not in row for row in curve))
 
-        mismatched = [dict(row) for row in summary]
-        changed = next(row for row in mismatched
-                       if row["mode"] == "scene-bvh" and
-                       row["metric"] == "safe_stop_rate" and row["ray_count"] == 5)
-        changed["estimate"] += 0.1
+    def test_fixed_ray_plot_rejects_paired_mismatch_with_equal_aggregate_rate(self):
+        trials = analyze_hazard.read_trials(os.path.join(FIXTURES, "hazard_trials.csv"))
+        summary, grouped = analyze_hazard.summarize_trials(trials)
+        mismatched = {
+            key: [dict(row) for row in rows]
+            for key, rows in grouped.items()
+        }
+        scene_rows = mismatched["scene-bvh", 9]
+        safe_stop = next(row for row in scene_rows if row["outcome"] == "SafeStop")
+        collision = next(row for row in scene_rows if row["outcome"] == "Collision")
+        safe_stop["outcome"], collision["outcome"] = (
+            collision["outcome"], safe_stop["outcome"])
+        self.assertEqual(
+            sum(row["outcome"] == "SafeStop" for row in grouped["scene-bvh", 9]),
+            sum(row["outcome"] == "SafeStop" for row in scene_rows))
+
         with self.assertRaisesRegex(
-                analyze_hazard.ValidationError, "fixed-ray safe-stop rate differs"):
-            analyze_hazard.prepare_fixed_ray_safety(mismatched)
+                analyze_hazard.ValidationError,
+                "fixed-ray outcomes differ for 2 paired scenarios"):
+            analyze_hazard.prepare_fixed_ray_safety(summary, mismatched)
 
     def test_plot_output_contract_replaces_difference_and_ray_images(self):
         self.assertEqual(
