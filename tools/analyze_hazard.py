@@ -10,7 +10,10 @@ Required trial columns are ``mode``, ``scenario_id``, ``ray_count``, ``outcome``
 ``collision_speed``. Required timing columns are ``mode``, ``ray_count``,
 ``median_ms``, and ``p95_ms``. Empty outcome-specific measurements are allowed.
 Optional ``control`` (or ``trial_kind``) rows identify first-frame-braking
-controls; optional parity booleans are checked when emitted.
+controls; optional parity booleans are checked when emitted. The benchmark
+contract requires ``true-brute``, ``mesh-bvh``, and ``scene-bvh`` at all nine
+declared fixed ray counts and reports adjacent-layer timing and budget
+attribution.
 """
 import argparse
 import csv
@@ -22,6 +25,14 @@ from collections import defaultdict
 
 
 STANDARD_BUDGETS_MS = (0.5, 1.0, 2.0, 5.0, 8.0)
+EXPECTED_MODES = ("true-brute", "mesh-bvh", "scene-bvh")
+EXPECTED_RAY_COUNTS = (0, 5, 9, 17, 33, 65, 129, 257, 361)
+ADJACENT_MODE_PAIRS = (
+    ("true-brute", "mesh-bvh"),
+    ("mesh-bvh", "scene-bvh"),
+)
+ENDPOINT_MODE_PAIR = ("true-brute", "scene-bvh")
+COMPARISON_MODE_PAIRS = (*ADJACENT_MODE_PAIRS, ENDPOINT_MODE_PAIR)
 METRICS = (
     ("safe_stop_rate", "Safe-stop rate", lambda row: float(row["outcome"] == "SafeStop")),
     ("detection_range", "Detection range", lambda row: row["detection_range"]),
@@ -55,6 +66,7 @@ PARITY_ALIASES = {
 }
 STYLE = {
     "true-brute": dict(label="true brute", color="#c1272d", marker="o"),
+    "mesh-bvh": dict(label="mesh BVH", color="#f28e2b", marker="s"),
     "scene-bvh": dict(label="scene BVH", color="#0071bc", marker="D"),
 }
 PLOT_FILENAMES = {
@@ -237,6 +249,32 @@ def validate_pairing(trials, timing):
                 f"({'; '.join(details)})")
 
 
+def validate_expected_coverage(trials, timing):
+    """Require the benchmark's declared three tracers and nine fixed ray counts."""
+    expected_modes = set(EXPECTED_MODES)
+    trial_modes = {row["mode"] for row in trials}
+    timing_modes = {row["mode"] for row in timing}
+    if trial_modes != expected_modes:
+        raise ValidationError(
+            "trial modes must be exactly " + ", ".join(EXPECTED_MODES))
+    if timing_modes != expected_modes:
+        raise ValidationError(
+            "timing modes must be exactly " + ", ".join(EXPECTED_MODES))
+
+    expected_rays = set(EXPECTED_RAY_COUNTS)
+    for mode in EXPECTED_MODES:
+        trial_rays = {row["ray_count"] for row in trials if row["mode"] == mode}
+        timing_rays = {row["ray_count"] for row in timing if row["mode"] == mode}
+        if trial_rays != expected_rays:
+            raise ValidationError(
+                f"trial ray counts for {mode} must be exactly "
+                + ", ".join(map(str, EXPECTED_RAY_COUNTS)))
+        if timing_rays != expected_rays:
+            raise ValidationError(
+                f"timing ray counts for {mode} must be exactly "
+                + ", ".join(map(str, EXPECTED_RAY_COUNTS)))
+
+
 def paired_bootstrap_difference(left, right, metric, samples=2000, seed=20260819):
     """Return mean(left-right) and a deterministic percentile 95% paired interval."""
     left_by_id = {row["scenario_id"]: metric(row) for row in left}
@@ -250,6 +288,8 @@ def paired_bootstrap_difference(left, right, metric, samples=2000, seed=20260819
         return None, None, None, 0
     differences = [a - b for a, b in pairs]
     estimate = sum(differences) / len(differences)
+    if all(value == differences[0] for value in differences[1:]):
+        return estimate, estimate, estimate, len(differences)
     rng = random.Random(seed)
     n = len(differences)
     bootstrap = []
@@ -333,6 +373,86 @@ def map_budgets(timing, budgets):
     return mappings
 
 
+def _speedup(baseline, accelerated):
+    return baseline / accelerated if accelerated > 0 else None
+
+
+def timing_attribution(timing):
+    """Compare same-ray scan latency for each acceleration layer."""
+    by_key = {(row["mode"], row["ray_count"]): row for row in timing}
+    rows = []
+    for from_mode, to_mode in ADJACENT_MODE_PAIRS:
+        for ray_count in EXPECTED_RAY_COUNTS:
+            baseline = by_key[from_mode, ray_count]
+            accelerated = by_key[to_mode, ray_count]
+            rows.append({
+                "transition": f"{from_mode}_to_{to_mode}",
+                "from_mode": from_mode,
+                "to_mode": to_mode,
+                "ray_count": ray_count,
+                "from_median_ms": baseline["median_ms"],
+                "to_median_ms": accelerated["median_ms"],
+                "median_reduction_ms": baseline["median_ms"] - accelerated["median_ms"],
+                "median_speedup": _speedup(
+                    baseline["median_ms"], accelerated["median_ms"]),
+                "from_p95_ms": baseline["p95_ms"],
+                "to_p95_ms": accelerated["p95_ms"],
+                "p95_reduction_ms": baseline["p95_ms"] - accelerated["p95_ms"],
+                "p95_speedup": _speedup(
+                    baseline["p95_ms"], accelerated["p95_ms"]),
+            })
+    return rows
+
+
+def budget_attribution(summary, mappings, budget_differences):
+    """Report mapped ray and safety consequences for each acceleration layer."""
+    mapping_by_key = {
+        (row["mode"], row["budget_ms"]): row for row in mappings
+    }
+    safe_rates = {
+        (row["mode"], row["ray_count"]): row["estimate"]
+        for row in summary if row["metric"] == "safe_stop_rate"
+    }
+    safe_differences = {
+        (row["budget_ms"], row["right_mode"], row["left_mode"]): row
+        for row in budget_differences
+        if row["metric"] == "safe_stop_rate"
+    }
+    budgets = sorted({row["budget_ms"] for row in mappings})
+    rows = []
+    for budget in budgets:
+        for from_mode, to_mode in ADJACENT_MODE_PAIRS:
+            baseline = mapping_by_key[from_mode, budget]
+            accelerated = mapping_by_key[to_mode, budget]
+            difference = safe_differences[budget, from_mode, to_mode]
+            from_rate = safe_rates[from_mode, baseline["ray_count"]]
+            to_rate = safe_rates[to_mode, accelerated["ray_count"]]
+            if not math.isclose(
+                    to_rate - from_rate, difference["difference"],
+                    rel_tol=0.0, abs_tol=1e-12):
+                raise ValidationError(
+                    f"{from_mode} to {to_mode} budget attribution does not "
+                    f"match mapped safe-stop rates at {budget:g} ms")
+            rows.append({
+                "budget_ms": budget,
+                "transition": f"{from_mode}_to_{to_mode}",
+                "from_mode": from_mode,
+                "to_mode": to_mode,
+                "from_selected_p95_ms": baseline["selected_p95_ms"],
+                "to_selected_p95_ms": accelerated["selected_p95_ms"],
+                "from_ray_count": baseline["ray_count"],
+                "to_ray_count": accelerated["ray_count"],
+                "ray_count_gain": accelerated["ray_count"] - baseline["ray_count"],
+                "from_safe_stop_rate": from_rate,
+                "to_safe_stop_rate": to_rate,
+                "safe_stop_rate_gain": difference["difference"],
+                "ci_low": difference["ci_low"],
+                "ci_high": difference["ci_high"],
+                "n_paired": difference["n_paired"],
+            })
+    return rows
+
+
 def prepare_budget_plot_data(summary, mappings, budget_differences):
     """Join mapped rays to actual rates and validate the reported paired intervals."""
     rates = {
@@ -348,19 +468,14 @@ def prepare_budget_plot_data(summary, mappings, budget_differences):
         mapped_rates.append({**mapping, "safe_stop_rate": rates[key]})
 
     points_by_budget = defaultdict(dict)
-    comparison_budgets = {}
     for point in mapped_rates:
         points_by_budget[point["budget_ms"]][point["mode"]] = point
-        comparison_budgets[f"budget_{point['budget_ms']:g}_ms"] = point["budget_ms"]
 
     safe_differences = []
     for row in budget_differences:
         if row["metric"] != "safe_stop_rate" or row["difference"] is None:
             continue
-        budget = comparison_budgets.get(row["comparison"])
-        if budget is None:
-            raise ValidationError(
-                f"safe-stop difference {row['comparison']} has no budget mapping")
+        budget = row["budget_ms"]
         points = points_by_budget[budget]
         try:
             actual = (points[row["left_mode"]]["safe_stop_rate"] -
@@ -373,7 +488,10 @@ def prepare_budget_plot_data(summary, mappings, budget_differences):
             raise ValidationError(
                 f"safe-stop difference {row['comparison']} does not match mapped rates")
         safe_differences.append({**row, "plot_budget_ms": budget})
-    return mapped_rates, sorted(safe_differences, key=lambda row: row["plot_budget_ms"])
+    return mapped_rates, sorted(
+        safe_differences,
+        key=lambda row: (
+            row["plot_budget_ms"], row["right_mode"], row["left_mode"]))
 
 
 def prepare_fixed_ray_safety(summary, grouped):
@@ -522,7 +640,6 @@ def evaluate_gates(trials, grouped, mappings, budget_differences,
         gates.append(_gate("tracer_parity", "NOT_APPLICABLE",
                            "no tracer parity columns represented"))
 
-    modes = {row["mode"] for row in trials}
     mapping_by_budget = defaultdict(dict)
     for row in mappings:
         mapping_by_budget[row["budget_ms"]][row["mode"]] = row["ray_count"]
@@ -545,6 +662,8 @@ def evaluate_gates(trials, grouped, mappings, budget_differences,
     for row in budget_differences:
         if row["metric"] != "safe_stop_rate" or row["difference"] is None:
             continue
+        if (row["right_mode"], row["left_mode"]) != ENDPOINT_MODE_PAIR:
+            continue
         excludes_zero = row["ci_low"] > 0 or row["ci_high"] < 0
         if abs(row["difference"]) >= .10 and excludes_zero:
             separation.append(row["budget_ms"])
@@ -555,28 +674,34 @@ def evaluate_gates(trials, grouped, mappings, budget_differences,
                        if separation else "no mapped budget meets the safety separation gate"))
 
     convergence = mapping_by_budget.get(convergence_budget, {})
-    if {"true-brute", "scene-bvh"} <= modes and convergence:
-        both_361 = (convergence.get("true-brute") == 361 and
-                    convergence.get("scene-bvh") == 361)
+    if set(EXPECTED_MODES) <= set(convergence):
+        all_361 = all(convergence.get(mode) == 361 for mode in EXPECTED_MODES)
         outcomes_match = False
-        if both_361 and ("true-brute", 361) in grouped and ("scene-bvh", 361) in grouped:
-            left = {row["scenario_id"]: row["outcome"] for row in grouped[("scene-bvh", 361)]}
-            right = {row["scenario_id"]: row["outcome"] for row in grouped[("true-brute", 361)]}
-            outcomes_match = left == right
-        gates.append(_gate("convergence", "PASS" if both_361 and outcomes_match else "FAIL",
+        if all_361:
+            outcomes = []
+            for mode in EXPECTED_MODES:
+                outcomes.append({
+                    row["scenario_id"]: row["outcome"]
+                    for row in grouped[(mode, 361)]
+                })
+            outcomes_match = all(item == outcomes[0] for item in outcomes[1:])
+        mapped_rays = ", ".join(
+            f"{mode}={convergence.get(mode, 0)}" for mode in EXPECTED_MODES)
+        gates.append(_gate("convergence", "PASS" if all_361 and outcomes_match else "FAIL",
                            f"{convergence_budget:g} ms maps to "
-                           f"{convergence.get('true-brute', 0)} and "
-                           f"{convergence.get('scene-bvh', 0)} rays; "
+                           f"{mapped_rays} rays; "
                            f"361-ray outcomes {'match' if outcomes_match else 'do not match'}"))
     else:
         gates.append(_gate("convergence", "NOT_APPLICABLE",
-                           "both true-brute and scene-bvh trial modes are required"))
+                           "all three tracer modes are required"))
     return gates
 
 
 def _write_csv(path, rows, fields):
     with open(path, "w", newline="", encoding="utf-8") as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=fields, extrasaction="ignore")
+        writer = csv.DictWriter(
+            csv_file, fieldnames=fields, extrasaction="ignore",
+            lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -600,7 +725,7 @@ def plot(summary, grouped, mappings, budget_differences, convergence_budget, out
     fig, ax = plt.subplots(figsize=(7, 4.5))
     ax.plot([row["ray_count"] for row in fixed_ray_safety],
             [row["safe_stop_rate"] for row in fixed_ray_safety],
-            marker="o", color="#4d4d4d", label="both tracers (identical outcomes)")
+            marker="o", color="#4d4d4d", label="all tracers (identical outcomes)")
     ax.set_title("Diagnostic: safe-stop outcome by fixed ray count")
     ax.set_xlabel("fixed rays per frame (compute-independent)")
     ax.set_ylabel("safe-stop rate")
@@ -643,6 +768,11 @@ def plot(summary, grouped, mappings, budget_differences, convergence_budget, out
     for mode, rows in sorted(by_mode.items()):
         rows.sort(key=lambda row: row["budget_ms"])
         style = mode_style(mode)
+        horizontal, safety_vertical, rays_vertical = {
+            "true-brute": (-14, -18, -15),
+            "mesh-bvh": (0, 9, 7),
+            "scene-bvh": (14, -34, -31),
+        }.get(mode, (8, 8, 8))
         xs = [budget_positions[row["budget_ms"]] for row in rows]
         safety_ax.plot(xs, [row["safe_stop_rate"] for row in rows],
                        marker=style["marker"], color=style["color"],
@@ -651,19 +781,18 @@ def plot(summary, grouped, mappings, budget_differences, convergence_budget, out
                      marker=style["marker"], color=style["color"],
                      label=style["label"])
         for x, row in zip(xs, rows):
-            horizontal = -10 if mode == "true-brute" else 10
-            vertical = -16 if mode == "true-brute" else (
-                -29 if row["safe_stop_rate"] > .93 else 8)
             safety_ax.annotate(
                 f"{row['safe_stop_rate']:.1%}", (x, row["safe_stop_rate"]),
-                xytext=(horizontal, vertical), textcoords="offset points",
-                ha="right" if horizontal < 0 else "left", fontsize=8,
+                xytext=(horizontal, safety_vertical), textcoords="offset points",
+                ha="right" if horizontal < 0 else (
+                    "left" if horizontal > 0 else "center"), fontsize=8,
                 color=style["color"])
             rays_ax.annotate(
                 f"{row['ray_count']} rays", (x, row["ray_count"]),
-                xytext=(horizontal, -15 if mode == "true-brute" else 7),
+                xytext=(horizontal, rays_vertical),
                 textcoords="offset points",
-                ha="right" if horizontal < 0 else "left", fontsize=8,
+                ha="right" if horizontal < 0 else (
+                    "left" if horizontal > 0 else "center"), fontsize=8,
                 color=style["color"])
 
     tick_labels = [f"{budget:g}" for budget in budgets]
@@ -689,23 +818,31 @@ def plot(summary, grouped, mappings, budget_differences, convergence_budget, out
             ax.axvline(convergence_x, color="#555555", linestyle="--",
                        linewidth=1.0, alpha=.7)
         rays_ax.text(convergence_x, rays_ax.get_ylim()[1] * .72,
-                     "convergence budget\nboth modes: 361 rays",
+                     "convergence budget\nall modes: 361 rays",
                      ha="center", va="center", fontsize=8,
                      bbox=dict(facecolor="white", edgecolor="#777777", alpha=.85))
 
     difference_by_budget = {
-        row["plot_budget_ms"]: row for row in safe_differences
+        (row["plot_budget_ms"], row["right_mode"], row["left_mode"]): row
+        for row in safe_differences
     }
     difference_cells = []
-    for budget in budgets:
-        row = difference_by_budget[budget]
-        difference_cells.append(
-            f"{row['difference'] * 100:+.1f}\n"
-            f"[{row['ci_low'] * 100:+.1f}, {row['ci_high'] * 100:+.1f}]")
+    difference_labels = []
+    for from_mode, to_mode in ADJACENT_MODE_PAIRS:
+        cells = []
+        for budget in budgets:
+            row = difference_by_budget[budget, from_mode, to_mode]
+            cells.append(
+                f"{row['difference'] * 100:+.1f}\n"
+                f"[{row['ci_low'] * 100:+.1f}, {row['ci_high'] * 100:+.1f}]")
+        difference_cells.append(cells)
+        difference_labels.append(
+            f"{mode_style(to_mode)['label']} - {mode_style(from_mode)['label']} (pp)\n"
+            "paired 95% CI")
     difference_table = safety_ax.table(
-        cellText=[difference_cells],
-        rowLabels=["scene-BVH − true-brute (pp)\npaired 95% CI"],
-        cellLoc="center", rowLoc="center", bbox=[0.0, -.42, 1.0, .22])
+        cellText=difference_cells,
+        rowLabels=difference_labels,
+        cellLoc="center", rowLoc="center", bbox=[0.0, -.60, 1.0, .38])
     difference_table.auto_set_font_size(False)
     difference_table.set_fontsize(7)
 
@@ -717,7 +854,7 @@ def plot(summary, grouped, mappings, budget_differences, convergence_budget, out
         "Discrete estimates from complete fixed-ray scan p95 timings on this machine; "
         "not hard real-time deadline guarantees.",
         ha="center", fontsize=9)
-    fig.subplots_adjust(bottom=.29, top=.84, wspace=.28)
+    fig.subplots_adjust(bottom=.36, top=.84, wspace=.28)
     fig.savefig(os.path.join(out_dir, PLOT_FILENAMES["budget"]), dpi=140)
     plt.close(fig)
 
@@ -740,37 +877,55 @@ def analyze(trials_path, timing_path, out_dir, convergence_budget_ms=None, make_
         raise ValidationError("trial CSV has no fixed-scan experiment rows")
     timing = read_timing(timing_path)
     validate_pairing(trials, timing)
+    validate_expected_coverage(trials, timing)
     summary, grouped = summarize_trials(trials)
+    prepare_fixed_ray_safety(summary, grouped)
     convergence_budget, convergence_source = _convergence_budget(
         timing, convergence_budget_ms)
     budgets = tuple(dict.fromkeys((*STANDARD_BUDGETS_MS, convergence_budget)))
     mappings = map_budgets(timing, budgets)
 
     same_ray = []
-    modes = sorted({row["mode"] for row in trials})
-    if "true-brute" in modes and "scene-bvh" in modes:
-        ray_counts = sorted(set(ray for mode, ray in grouped if mode == "true-brute") &
-                            set(ray for mode, ray in grouped if mode == "scene-bvh"))
-        same_ray = [(f"same_ray_{ray}", ("scene-bvh", ray), ("true-brute", ray))
-                    for ray in ray_counts]
+    for from_mode, to_mode in COMPARISON_MODE_PAIRS:
+        for ray_count in EXPECTED_RAY_COUNTS:
+            same_ray.append((
+                f"same_ray_{ray_count}_{from_mode}_to_{to_mode}",
+                (to_mode, ray_count),
+                (from_mode, ray_count),
+            ))
     paired = pair_differences(grouped, same_ray)
 
     mapping_by_budget = defaultdict(dict)
     for mapping in mappings:
         mapping_by_budget[mapping["budget_ms"]][mapping["mode"]] = mapping["ray_count"]
     budget_comparisons = []
+    comparison_budgets = {}
     for budget, mapped in sorted(mapping_by_budget.items()):
-        left_key = ("scene-bvh", mapped.get("scene-bvh", 0))
-        right_key = ("true-brute", mapped.get("true-brute", 0))
-        if left_key in grouped and right_key in grouped:
-            budget_comparisons.append((f"budget_{budget:g}_ms", left_key, right_key))
+        for from_mode, to_mode in COMPARISON_MODE_PAIRS:
+            left_key = (to_mode, mapped.get(to_mode, 0))
+            right_key = (from_mode, mapped.get(from_mode, 0))
+            if left_key in grouped and right_key in grouped:
+                comparison = (
+                    f"budget_{budget:g}_ms_{from_mode}_to_{to_mode}")
+                budget_comparisons.append((comparison, left_key, right_key))
+                comparison_budgets[comparison] = budget
     budget_differences = pair_differences(grouped, budget_comparisons)
     for row in budget_differences:
-        row["budget_ms"] = float(row["comparison"].split("_")[1])
+        row["budget_ms"] = comparison_budgets[row["comparison"]]
+
+    timing_layers = timing_attribution(timing)
+    budget_layers = budget_attribution(
+        summary, mappings, budget_differences)
 
     gates = evaluate_gates(
         trials, grouped, mappings, budget_differences, convergence_budget,
         control_rows)
+    gates.insert(0, _gate(
+        "fixed_ray_outcome_parity", "PASS",
+        f"all {len(trials)} fixed-ray rows have identical paired outcomes"))
+    gates.insert(0, _gate(
+        "timing_completeness", "PASS",
+        f"{len(timing)} rows = 3 modes x 9 ray counts"))
     os.makedirs(out_dir, exist_ok=True)
     _write_csv(os.path.join(out_dir, "hazard_summary.csv"), summary,
                ("mode", "ray_count", "metric", "metric_label", "estimate",
@@ -785,6 +940,17 @@ def analyze(trials_path, timing_path, out_dir, convergence_budget_ms=None, make_
                ("budget_ms", "comparison", "left_mode", "left_ray_count",
                 "right_mode", "right_ray_count", "metric", "metric_label",
                 "difference", "ci_low", "ci_high", "n_paired"))
+    _write_csv(os.path.join(out_dir, "hazard_timing_attribution.csv"), timing_layers,
+               ("transition", "from_mode", "to_mode", "ray_count",
+                "from_median_ms", "to_median_ms", "median_reduction_ms",
+                "median_speedup", "from_p95_ms", "to_p95_ms",
+                "p95_reduction_ms", "p95_speedup"))
+    _write_csv(os.path.join(out_dir, "hazard_budget_attribution.csv"), budget_layers,
+               ("budget_ms", "transition", "from_mode", "to_mode",
+                "from_selected_p95_ms", "to_selected_p95_ms",
+                "from_ray_count", "to_ray_count", "ray_count_gain",
+                "from_safe_stop_rate", "to_safe_stop_rate",
+                "safe_stop_rate_gain", "ci_low", "ci_high", "n_paired"))
     gates.insert(0, _gate("convergence_budget_source", "INFO",
                           f"{convergence_budget:g} ms ({convergence_source})"))
     _write_csv(os.path.join(out_dir, "hazard_acceptance_gates.csv"), gates,
@@ -792,7 +958,10 @@ def analyze(trials_path, timing_path, out_dir, convergence_budget_ms=None, make_
     if make_plots:
         plot(summary, grouped, mappings, budget_differences, convergence_budget, out_dir)
     return {"summary": summary, "mappings": mappings, "paired": paired,
-            "budget_differences": budget_differences, "gates": gates}
+            "budget_differences": budget_differences,
+            "timing_attribution": timing_layers,
+            "budget_attribution": budget_layers,
+            "gates": gates}
 
 
 def main():

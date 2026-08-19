@@ -12,16 +12,16 @@ namespace
 {
 constexpr double rangeTolerance = 1e-6;
 
-void assertParity(const ScanResult &brute, const ScanResult &bvh)
+void assertParity(const ScanResult &reference, const ScanResult &candidate)
 {
-    assert(brute.rays_requested == bvh.rays_requested);
-    assert(brute.rays_completed == bvh.rays_completed);
-    assert(brute.points.size() == bvh.points.size());
-    for (size_t i = 0; i < brute.points.size(); ++i)
+    assert(reference.rays_requested == candidate.rays_requested);
+    assert(reference.rays_completed == candidate.rays_completed);
+    assert(reference.points.size() == candidate.points.size());
+    for (size_t i = 0; i < reference.points.size(); ++i)
     {
-        assert(brute.points[i].hit == bvh.points[i].hit);
-        assert(brute.points[i].object_id == bvh.points[i].object_id);
-        assert(std::abs(brute.points[i].range - bvh.points[i].range) <=
+        assert(reference.points[i].hit == candidate.points[i].hit);
+        assert(reference.points[i].object_id == candidate.points[i].object_id);
+        assert(std::abs(reference.points[i].range - candidate.points[i].range) <=
                rangeTolerance);
     }
 }
@@ -52,13 +52,17 @@ void testFixedScansAndTracerParity()
         const ScanResult brute = scanFixedHorizontalWithIntersector(
             lidar, layout,
             [&](const Ray &ray) { return hazard->bruteForceIntersect(ray); });
-        const ScanResult accelerated = scanFixedHorizontalWithIntersector(
+        const ScanResult mesh_bvh = scanFixedHorizontalWithIntersector(
+            lidar, layout,
+            [&](const Ray &ray) { return hazard->intersect(ray); });
+        const ScanResult scene_bvh = scanFixedHorizontalWithIntersector(
             lidar, layout,
             [&](const Ray &ray) { return bvh.intersect(ray, lidar.maxRange); });
         assert(brute.rays_requested == ray_count);
         assert(brute.rays_completed == ray_count);
         assert(static_cast<int>(brute.points.size()) == ray_count);
-        assertParity(brute, accelerated);
+        assertParity(brute, mesh_bvh);
+        assertParity(brute, scene_bvh);
     }
 }
 

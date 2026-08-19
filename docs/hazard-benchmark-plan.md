@@ -168,6 +168,7 @@ Time complete fixed-ray scans for:
 
 ```text
 true-brute
+mesh-bvh
 scene-bvh
 ```
 
@@ -206,7 +207,7 @@ Emit trial-level CSV from C++. Aggregate, bootstrap, and plot in Python.
 - fixed scans emit the exact requested ray count;
 - ray layouts are nested, deterministic, and contain no duplicates;
 - scan points preserve hit object IDs;
-- identical layouts produce identical hits across both tracers;
+- identical layouts produce identical hits across all three tracers;
 - scenario generation is deterministic and produces only valid scenarios;
 - zero rays cause an undetected collision in every scenario;
 - first-frame detection produces a safe stop in every scenario;
@@ -223,14 +224,14 @@ The completed replacement satisfies:
 2. First-frame braking and 361-ray trials safely stop in at least 99%.
 3. Safe-stop rate and mean unbraked TTC are non-decreasing across nested ray
    counts.
-4. Both tracers return identical hit flags and object IDs, with ranges equal
+4. All three tracers return identical hit flags and object IDs, with ranges equal
    within the existing geometry tolerance.
 5. At some tested budget, scene-BVH maps to at least twice as many rays as
    true-brute.
 6. At some tested budget, the mapped ray counts differ by at least 10 percentage
    points in safe-stop rate, with a paired 95% confidence interval excluding
    zero.
-7. At the convergence budget, both modes map to 361 rays and therefore the same
+7. At the convergence budget, all modes map to 361 rays and therefore the same
    safety result.
 8. A clean build, tests, CSV generation, and plots pass end to end.
 
@@ -253,7 +254,6 @@ separation.
 
 These were intentionally not included in the completed first pass:
 
-- mesh-BVH as a third benchmark mode;
 - additional speeds, background-count sweeps, and mesh-complexity sweeps;
 - live deadline-limited closed-loop trials;
 - vertical layouts and progressive 2D ordering;

@@ -27,12 +27,22 @@ constexpr double rangeTolerance = 1e-6;
 enum class TraceMode
 {
     TrueBrute,
+    MeshBvh,
     SceneBvh
 };
 
 const char *modeName(TraceMode mode)
 {
-    return mode == TraceMode::TrueBrute ? "true-brute" : "scene-bvh";
+    switch (mode)
+    {
+    case TraceMode::TrueBrute:
+        return "true-brute";
+    case TraceMode::MeshBvh:
+        return "mesh-bvh";
+    case TraceMode::SceneBvh:
+        return "scene-bvh";
+    }
+    throw std::runtime_error("unknown trace mode");
 }
 
 struct BenchmarkWorld
@@ -148,6 +158,22 @@ Hit bruteIntersect(
     return closest;
 }
 
+Hit meshBvhIntersect(
+    const BenchmarkWorld &world, const Ray &ray, double max_range)
+{
+    Hit closest;
+    for (const auto &mesh : world.meshes)
+    {
+        const Hit hit = mesh->intersect(ray);
+        if (hit.hit && hit.t <= max_range &&
+            (!closest.hit || hit.t < closest.t))
+        {
+            closest = hit;
+        }
+    }
+    return closest;
+}
+
 ScanResult scanWorld(
     const BenchmarkWorld &world,
     TraceMode mode,
@@ -161,6 +187,13 @@ ScanResult scanWorld(
                 return bruteIntersect(world, ray, lidar.maxRange);
             });
     }
+    if (mode == TraceMode::MeshBvh)
+    {
+        return scanFixedHorizontalWithIntersector(
+            lidar, layout, [&](const Ray &ray) {
+                return meshBvhIntersect(world, ray, lidar.maxRange);
+            });
+    }
     return scanFixedHorizontalWithIntersector(
         lidar, layout, [&](const Ray &ray) {
             return world.bvh.intersect(ray, lidar.maxRange);
@@ -170,6 +203,7 @@ ScanResult scanWorld(
 void verifyParity(
     const ScanResult &brute,
     const ScanResult &accelerated,
+    TraceMode accelerated_mode,
     unsigned scenario_id,
     int ray_count,
     unsigned frame)
@@ -194,7 +228,8 @@ void verifyParity(
             std::abs(reference.range - candidate.range) > rangeTolerance)
         {
             throw std::runtime_error(
-                "tracer mismatch for scenario " +
+                std::string(modeName(accelerated_mode)) +
+                " tracer mismatch for scenario " +
                 std::to_string(scenario_id) + ", rays " +
                 std::to_string(ray_count) + ", frame " +
                 std::to_string(frame) + ", scan point " +
@@ -250,11 +285,16 @@ void runSafety(const std::string &csv_path)
                     const Lidar lidar = makeHorizontalLidar(pose);
                     const ScanResult brute =
                         scanWorld(world, TraceMode::TrueBrute, lidar, layout);
-                    const ScanResult accelerated =
+                    const ScanResult mesh_bvh =
+                        scanWorld(world, TraceMode::MeshBvh, lidar, layout);
+                    const ScanResult scene_bvh =
                         scanWorld(world, TraceMode::SceneBvh, lidar, layout);
                     verifyParity(
-                        brute, accelerated, trial.scenario_id, ray_count,
-                        frame.index);
+                        brute, mesh_bvh, TraceMode::MeshBvh,
+                        trial.scenario_id, ray_count, frame.index);
+                    verifyParity(
+                        brute, scene_bvh, TraceMode::SceneBvh,
+                        trial.scenario_id, ray_count, frame.index);
                     const std::optional<double> range =
                         scanRangeForObjectId(brute, trial.hazard.object_id);
                     return HazardDetection{
@@ -264,9 +304,12 @@ void runSafety(const std::string &csv_path)
                 csv, modeName(TraceMode::TrueBrute), scenario, ray_count,
                 "fixed_scan", result);
             writeTrial(
+                csv, modeName(TraceMode::MeshBvh), scenario, ray_count,
+                "fixed_scan", result);
+            writeTrial(
                 csv, modeName(TraceMode::SceneBvh), scenario, ray_count,
                 "fixed_scan", result);
-            rows += 2;
+            rows += 3;
         }
 
         const HazardResult first_frame = runHazardTrial(
@@ -289,9 +332,12 @@ void runSafety(const std::string &csv_path)
             csv, modeName(TraceMode::TrueBrute), scenario, 361,
             "first_frame_braking", first_frame);
         writeTrial(
+            csv, modeName(TraceMode::MeshBvh), scenario, 361,
+            "first_frame_braking", first_frame);
+        writeTrial(
             csv, modeName(TraceMode::SceneBvh), scenario, 361,
             "first_frame_braking", first_frame);
-        rows += 2;
+        rows += 3;
     }
     csv.flush();
     if (!csv)
@@ -350,9 +396,12 @@ void verifyTimingScene(
             nestedHorizontalRayLayout(361, index / 32.0);
         const ScanResult brute =
             scanWorld(world, TraceMode::TrueBrute, lidar, layout);
-        const ScanResult accelerated =
+        const ScanResult mesh_bvh =
+            scanWorld(world, TraceMode::MeshBvh, lidar, layout);
+        const ScanResult scene_bvh =
             scanWorld(world, TraceMode::SceneBvh, lidar, layout);
-        verifyParity(brute, accelerated, index, 361, 0);
+        verifyParity(brute, mesh_bvh, TraceMode::MeshBvh, index, 361, 0);
+        verifyParity(brute, scene_bvh, TraceMode::SceneBvh, index, 361, 0);
     }
 }
 
@@ -411,7 +460,8 @@ void runTiming(const std::string &csv_path)
     const std::vector<Eigen::Isometry3d> poses = makeTimingPoses();
     verifyTimingScene(world, poses);
 
-    for (const TraceMode mode : {TraceMode::TrueBrute, TraceMode::SceneBvh})
+    for (const TraceMode mode :
+         {TraceMode::TrueBrute, TraceMode::MeshBvh, TraceMode::SceneBvh})
     {
         for (const int ray_count : nestedHorizontalRayLayoutCounts)
         {
@@ -424,7 +474,7 @@ void runTiming(const std::string &csv_path)
     csv.flush();
     if (!csv)
         throw std::runtime_error("failed while writing CSV: " + csv_path);
-    std::cout << "[timing] wrote 18 rows using exactly "
+    std::cout << "[timing] wrote 27 rows using exactly "
               << world.obstacles.size() << " background objects, "
               << timingWarmupScans << " warmups and "
               << timingMeasuredScans << " measured scans per row to "
