@@ -348,12 +348,14 @@ triangles. The extension retains the same 32 poses, nine nested ray layouts,
 three tracer definitions, 20 warmups, 200 measured complete scans, timing
 boundaries, budgets, and safety curve.
 
-The 25- and 50-object levels are spatially balanced prefixes of PR 2's exact
-100-object set. Deterministic low-discrepancy additions inside that set's bounds
-form the 200- and 400-object prefixes. Object IDs, poses, radii, and geometry do
-not change after an object first appears. All levels therefore occupy one fixed
-domain rather than expanding scene bounds or adding objects outside measured
-rays.
+The 25- and 50-object levels are spatially balanced nested subsets of PR 2's
+exact 100-object set. Membership selection is separate from construction order:
+selected PR 2 objects are always instantiated in original row-major order, and
+deterministic low-discrepancy additions inside that set's bounds use one stable
+canonical order for the 200- and 400-object levels. Object IDs, poses, radii, and
+geometry do not change after an object first appears. All levels therefore occupy
+one fixed domain rather than expanding scene bounds or adding objects outside
+measured rays.
 
 The safety experiment is not rerun or duplicated. Every count/mode timing series
 maps onto `plots/hazard_trials.csv` and its validated mode-independent fixed-ray
@@ -372,30 +374,30 @@ At 361 rays, the measured incremental results are:
 
 | objects | mesh-BVH p95 (ms) | scene-BVH p95 (ms) | speedup |
 | ---: | ---: | ---: | ---: |
-| 25 | 0.563 | 0.182 | 3.10x |
-| 50 | 0.626 | 0.531 | 1.18x |
-| 100 | 1.029 | 0.501 | 2.05x |
-| 200 | 3.981 | 1.453 | 2.74x |
-| 400 | 15.851 | 0.970 | 16.34x |
+| 25 | 0.393 | 0.408 | 0.96x |
+| 50 | 1.102 | 0.439 | 2.51x |
+| 100 | 1.503 | 0.512 | 2.94x |
+| 200 | 1.126 | 0.350 | 3.22x |
+| 400 | 3.179 | 0.404 | 7.86x |
 
 The result is mixed and non-monotonic at low counts. Scene-BVH p95 is not lower
-at every nonzero ray count for 25, 50, or 100 objects (3, 3, and 1 exceptions),
-but it is lower at all eight nonzero ray counts for both 200 and 400 objects.
-At 400 objects and 0.5 ms, scene-BVH adds 248 mapped rays and 65.9 percentage
-points of safe-stop rate over mesh-BVH. At 200 objects the corresponding gains
-are 96 rays and 1.6 points. Lower-count standard-budget safety gains are zero
-because both modes already map to the 100% safe-stop plateau.
+at every nonzero ray count for 25 or 50 objects (3 and 1 exceptions), but it is
+lower at all eight nonzero ray counts for 100, 200, and 400 objects. At the
+0.5 ms budget, scene-BVH adds 0, 232, 192, 232, and 296 mapped rays over
+mesh-BVH at 25, 50, 100, 200, and 400 objects. Every mapped pair is already on
+the fixed curve's 100% safe-stop plateau, so safe-stop gain is zero at every
+standard budget and count.
 
-The measured run has 9 adjacent-ray and 16 adjacent-count p95 decreases. They
+The measured run has 4 adjacent-ray and 24 adjacent-count p95 decreases. They
 remain in the published inversion table and the discrete mapping still selects
 the largest individually measured ray count whose p95 fits. No placement,
 metric, smoothing, or rerun was used to force a trend.
 
 ### Extension acceptance gates
 
-1. All five scenes have exact unique counts, are deterministic nested prefixes,
-   preserve the PR 2 100-object set and one fixed spatial domain, and use exactly
-   120 triangles per object.
+1. All five scenes have exact unique counts, are deterministic nested subsets,
+   preserve the exact PR 2 100-object construction sequence and one fixed spatial
+   domain, and use exactly 120 triangles per object.
 2. True-brute, mesh-BVH, and scene-BVH have identical hit flags, object IDs, and
    ranges within `1e-6` at every count, pose, and layout.
 3. Timing output has exactly 135 unique rows with unchanged timing methodology

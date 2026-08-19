@@ -119,27 +119,27 @@ when given the same fixed rays.
 
 This extension changes only object count through **25, 50, 100, 200, and 400**.
 Every object uses the existing `1x` 120-triangle mesh. Scenes are deterministic,
-nested prefixes over one fixed spatial domain; the 100-object level preserves PR
-2's exact objects as a set. Poses, ray layouts, tracer definitions, 20 warmups,
-200 measurements, and construction exclusions are unchanged.
+nested subsets over one fixed spatial domain. Selected PR 2 objects are
+instantiated in their original row-major order, so the 100-object level preserves
+PR 2's exact specification sequence. Poses, ray layouts, tracer definitions, 20
+warmups, 200 measurements, and construction exclusions are unchanged.
 
-The measured 361-ray mesh-BVH -> scene-BVH p95 values are **0.563 -> 0.182 ms
-(3.10x)** at 25 objects, **0.626 -> 0.531 ms (1.18x)** at 50,
-**1.029 -> 0.501 ms (2.05x)** at 100, **3.981 -> 1.453 ms (2.74x)** at 200,
-and **15.851 -> 0.970 ms (16.34x)** at 400. This is not a monotonic-speedup
-claim: scene-BVH had 3, 3, and 1 adverse nonzero-ray p95 comparisons at
-25/50/100 objects, respectively, but improved every nonzero-ray comparison at
-200 and 400.
+The measured 361-ray mesh-BVH -> scene-BVH p95 values are **0.393 -> 0.408 ms
+(0.96x)** at 25 objects, **1.102 -> 0.439 ms (2.51x)** at 50,
+**1.503 -> 0.512 ms (2.94x)** at 100, **1.126 -> 0.350 ms (3.22x)** at 200,
+and **3.179 -> 0.404 ms (7.86x)** at 400. This is not a monotonic-latency or
+speedup claim. Scene-BVH had 3 adverse nonzero-ray p95 comparisons at 25 objects
+and 1 at 50; it improved every nonzero-ray comparison at 100, 200, and 400.
 
-At 400 objects and the 0.5 ms budget, mesh-BVH -> scene-BVH maps
-**9 -> 257 rays** and **34.1% -> 100.0% safe stops**, a **+248-ray,
-+65.9 percentage-point** gain on the unchanged fixed-ray curve. At 200 objects
-the same budget maps **33 -> 129 rays** and **98.4% -> 100.0%**, a **+96-ray,
-+1.6-point** gain. Standard-budget safe-stop gains at 25/50/100 are zero because
-both mapped ray counts are already on the curve's 100% plateau.
+At the 0.5 ms budget, mesh-BVH -> scene-BVH maps **361 -> 361**, **129 -> 361**,
+**65 -> 257**, **129 -> 361**, and **65 -> 361 rays** at
+25/50/100/200/400 objects. The corresponding ray gains are
+**0, 232, 192, 232, and 296**. Every mapped pair is already on the unchanged
+fixed-ray curve's 100% safe-stop plateau, so this measured run has **zero
+safe-stop gain at every standard budget and object count**.
 
-The publication retains all 7 mesh-to-scene adverse comparisons, 9 adjacent-ray
-p95 decreases, and 16 adjacent-count p95 decreases rather than smoothing them;
+The publication retains all 4 mesh-to-scene adverse comparisons, 4 adjacent-ray
+p95 decreases, and 24 adjacent-count p95 decreases rather than smoothing them;
 see
 [`hazard_object_count_robustness_exceptions.csv`](plots/hazard_object_count_analysis/hazard_object_count_robustness_exceptions.csv)
 and

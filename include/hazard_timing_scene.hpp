@@ -57,7 +57,7 @@ inline double radicalInverse(unsigned value, unsigned base)
     return result;
 }
 
-inline std::vector<ObjectSpec> makeObjectCountSpecs()
+inline std::vector<ObjectSpec> makeBalancedPr2ObjectSpecs()
 {
     const std::vector<ObjectSpec> base = makePr2ObjectSpecs();
     constexpr std::array<std::array<int, 2>, 4> localOrder = {{
@@ -68,7 +68,7 @@ inline std::vector<ObjectSpec> makeObjectCountSpecs()
     }};
 
     std::vector<ObjectSpec> specs;
-    specs.reserve(maxObjectCount);
+    specs.reserve(baseObjectCount);
     for (const auto &local : localOrder)
     {
         for (int block_row = 0; block_row < 5; ++block_row)
@@ -81,7 +81,13 @@ inline std::vector<ObjectSpec> makeObjectCountSpecs()
             }
         }
     }
+    return specs;
+}
 
+inline std::vector<ObjectSpec> makeCanonicalObjectSpecs()
+{
+    std::vector<ObjectSpec> specs = makePr2ObjectSpecs();
+    specs.reserve(maxObjectCount);
     double min_x = specs.front().x - specs.front().radius;
     double max_x = specs.front().x + specs.front().radius;
     double min_y = specs.front().y - specs.front().radius;
@@ -141,8 +147,25 @@ inline std::vector<ObjectSpec> makeObjectCountSpecs(int object_count)
     if (!supported)
         throw std::invalid_argument("unsupported timing object count");
 
-    std::vector<ObjectSpec> specs = makeObjectCountSpecs();
+    std::vector<ObjectSpec> specs;
+    if (object_count <= baseObjectCount)
+    {
+        specs = makeBalancedPr2ObjectSpecs();
+        specs.resize(static_cast<size_t>(object_count));
+        std::sort(
+            specs.begin(), specs.end(),
+            [](const ObjectSpec &left, const ObjectSpec &right)
+            { return left.object_id < right.object_id; });
+        return specs;
+    }
+
+    specs = makeCanonicalObjectSpecs();
     specs.resize(static_cast<size_t>(object_count));
     return specs;
+}
+
+inline std::vector<ObjectSpec> makeObjectCountSpecs()
+{
+    return makeCanonicalObjectSpecs();
 }
 } // namespace hazard_timing_scene

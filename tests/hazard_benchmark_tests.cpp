@@ -160,16 +160,17 @@ void testNestedObjectCountTimingScenes()
 
     const std::vector<ObjectSpec> pr2 =
         hazard_timing_scene::makePr2ObjectSpecs();
-    std::map<int, ObjectSpec> pr2_by_id;
-    std::map<int, ObjectSpec> nested_100_by_id;
-    for (const ObjectSpec &spec : pr2)
-        pr2_by_id.emplace(spec.object_id, spec);
-    for (size_t index = 0; index < hazard_timing_scene::baseObjectCount; ++index)
-        nested_100_by_id.emplace(all[index].object_id, all[index]);
-    assert(pr2_by_id.size() == hazard_timing_scene::baseObjectCount);
-    assert(nested_100_by_id.size() == pr2_by_id.size());
-    for (const auto &entry : pr2_by_id)
-        assertObjectSpecEqual(entry.second, nested_100_by_id.at(entry.first));
+    const std::vector<ObjectSpec> nested_100 =
+        hazard_timing_scene::makeObjectCountSpecs(100);
+    assert(pr2.size() == nested_100.size());
+    for (size_t index = 0; index < pr2.size(); ++index)
+    {
+        assertObjectSpecEqual(pr2[index], nested_100[index]);
+        assertObjectSpecEqual(pr2[index], all[index]);
+    }
+    std::map<int, ObjectSpec> canonical_by_id;
+    for (const ObjectSpec &spec : all)
+        canonical_by_id.emplace(spec.object_id, spec);
 
     double min_x = pr2.front().x - pr2.front().radius;
     double max_x = pr2.front().x + pr2.front().radius;
@@ -183,16 +184,22 @@ void testNestedObjectCountTimingScenes()
         max_y = std::max(max_y, spec.y + spec.radius);
     }
 
+    std::set<int> previous_ids;
     for (const int object_count : hazard_timing_scene::objectCounts)
     {
-        const std::vector<ObjectSpec> prefix =
+        const std::vector<ObjectSpec> selected =
             hazard_timing_scene::makeObjectCountSpecs(object_count);
-        assert(prefix.size() == static_cast<size_t>(object_count));
+        assert(selected.size() == static_cast<size_t>(object_count));
+        assert(std::is_sorted(
+            selected.begin(), selected.end(),
+            [](const ObjectSpec &left, const ObjectSpec &right)
+            { return left.object_id < right.object_id; }));
         std::set<std::pair<int, int>> occupied_macro_cells;
-        for (size_t index = 0; index < prefix.size(); ++index)
+        std::set<int> selected_ids;
+        for (const ObjectSpec &spec : selected)
         {
-            assertObjectSpecEqual(prefix[index], all[index]);
-            const ObjectSpec &spec = prefix[index];
+            assertObjectSpecEqual(canonical_by_id.at(spec.object_id), spec);
+            assert(selected_ids.insert(spec.object_id).second);
             assert(spec.x - spec.radius >= min_x);
             assert(spec.x + spec.radius <= max_x);
             assert(spec.y - spec.radius >= min_y);
@@ -205,7 +212,11 @@ void testNestedObjectCountTimingScenes()
                     (original_index % 10) / 2);
             }
         }
+        assert(std::includes(
+            selected_ids.begin(), selected_ids.end(),
+            previous_ids.begin(), previous_ids.end()));
         assert(occupied_macro_cells.size() == 25);
+        previous_ids = std::move(selected_ids);
     }
 }
 
