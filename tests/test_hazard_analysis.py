@@ -74,6 +74,101 @@ class HazardAnalysisTest(unittest.TestCase):
         self.assertEqual("PASS", status["convergence"])
         self.assertTrue(os.path.isfile(os.path.join(out_dir, "hazard_budget_mapping.csv")))
 
+    def test_budget_plot_data_matches_mappings_rates_and_paired_intervals(self):
+        out_dir = os.path.join(ROOT, "tests", "generated_hazard_analysis")
+        self.addCleanup(lambda: shutil.rmtree(out_dir, ignore_errors=True))
+        result = analyze_hazard.analyze(
+            os.path.join(FIXTURES, "hazard_trials.csv"),
+            os.path.join(FIXTURES, "hazard_timing.csv"),
+            out_dir, make_plots=False)
+        mapped_rates, differences = analyze_hazard.prepare_budget_plot_data(
+            result["summary"], result["mappings"], result["budget_differences"])
+
+        summary_rates = {
+            (row["mode"], row["ray_count"]): row["estimate"]
+            for row in result["summary"] if row["metric"] == "safe_stop_rate"
+        }
+        for point in mapped_rates:
+            self.assertEqual(
+                summary_rates[point["mode"], point["ray_count"]],
+                point["safe_stop_rate"])
+
+        by_budget = {}
+        for point in mapped_rates:
+            by_budget.setdefault(point["budget_ms"], {})[point["mode"]] = point
+        source_differences = {
+            row["comparison"]: row for row in result["budget_differences"]
+            if row["metric"] == "safe_stop_rate"
+        }
+        for difference in differences:
+            source = source_differences[difference["comparison"]]
+            self.assertEqual(source["ci_low"], difference["ci_low"])
+            self.assertEqual(source["ci_high"], difference["ci_high"])
+            points = by_budget[difference["plot_budget_ms"]]
+            actual = (points[difference["left_mode"]]["safe_stop_rate"] -
+                      points[difference["right_mode"]]["safe_stop_rate"])
+            self.assertAlmostEqual(difference["difference"], actual)
+
+    def test_fixed_ray_plot_data_is_one_mode_independent_curve(self):
+        trials = analyze_hazard.read_trials(os.path.join(FIXTURES, "hazard_trials.csv"))
+        summary, grouped = analyze_hazard.summarize_trials(trials)
+        curve = analyze_hazard.prepare_fixed_ray_safety(summary, grouped)
+        expected_ray_counts = sorted({
+            row["ray_count"] for row in summary
+            if row["metric"] == "safe_stop_rate"
+        })
+        self.assertEqual(expected_ray_counts, [row["ray_count"] for row in curve])
+        self.assertTrue(all("mode" not in row for row in curve))
+
+    def test_fixed_ray_plot_rejects_paired_mismatch_with_equal_aggregate_rate(self):
+        trials = analyze_hazard.read_trials(os.path.join(FIXTURES, "hazard_trials.csv"))
+        summary, grouped = analyze_hazard.summarize_trials(trials)
+        mismatched = {
+            key: [dict(row) for row in rows]
+            for key, rows in grouped.items()
+        }
+        scene_rows = mismatched["scene-bvh", 9]
+        safe_stop = next(row for row in scene_rows if row["outcome"] == "SafeStop")
+        collision = next(row for row in scene_rows if row["outcome"] == "Collision")
+        safe_stop["outcome"], collision["outcome"] = (
+            collision["outcome"], safe_stop["outcome"])
+        self.assertEqual(
+            sum(row["outcome"] == "SafeStop" for row in grouped["scene-bvh", 9]),
+            sum(row["outcome"] == "SafeStop" for row in scene_rows))
+
+        with self.assertRaisesRegex(
+                analyze_hazard.ValidationError,
+                "fixed-ray outcomes differ for 2 paired scenarios"):
+            analyze_hazard.prepare_fixed_ray_safety(summary, mismatched)
+
+    def test_fixed_ray_plot_rejects_duplicate_scenario_row(self):
+        trials = analyze_hazard.read_trials(os.path.join(FIXTURES, "hazard_trials.csv"))
+        summary, grouped = analyze_hazard.summarize_trials(trials)
+        duplicated = {
+            key: [dict(row) for row in rows]
+            for key, rows in grouped.items()
+        }
+        duplicated["scene-bvh", 9].append(dict(duplicated["scene-bvh", 9][0]))
+
+        with self.assertRaisesRegex(
+                analyze_hazard.ValidationError, "rows contain duplicate scenario IDs"):
+            analyze_hazard.prepare_fixed_ray_safety(summary, duplicated)
+
+    def test_plot_output_contract_replaces_difference_and_ray_images(self):
+        self.assertEqual(
+            {
+                "hazard_budget_safe_stop_and_rays.png",
+                "hazard_safety_by_rays.png",
+                "hazard_undetected_collisions.png",
+            },
+            set(analyze_hazard.PLOT_FILENAMES.values()))
+        self.assertNotIn(
+            "hazard_budget_safety_difference.png",
+            analyze_hazard.PLOT_FILENAMES.values())
+        self.assertNotIn(
+            "hazard_budget_rays.png",
+            analyze_hazard.PLOT_FILENAMES.values())
+
     def test_cli_fails_when_an_acceptance_gate_fails(self):
         argv = ["analyze_hazard.py", "--trials", "trials.csv",
                 "--timing", "timing.csv"]
