@@ -1,0 +1,44 @@
+gate,status,detail
+trial_row_count,PASS,86400/86400 rows
+scenario_coverage_and_common_pairing,PASS,2880 global scenarios; 960 tuples per speed with common pairing
+excluded_4mps_2m_control,PASS,2 m clearance is outside the predeclared common domain; hazard_speed_trial proves 4 m/s reaches contact at the first-frame braking endpoint
+tracer_parity,PASS,"all hit flags, object IDs, and ranges match"
+fixed_ray_mode_independence,PASS,27 speed/ray mode-independent curve points
+zero_ray_collisions_2_true-brute,PASS,960/960 collided
+full_resolution_safe_stop_2_true-brute,PASS,100.000%
+first_frame_safe_stop_2_true-brute,PASS,100.000%
+monotonic_safety_and_ttc_2_true-brute,PASS,safe-stop rate and all-scenario TTC nondecreasing
+zero_ray_collisions_2_mesh-bvh,PASS,960/960 collided
+full_resolution_safe_stop_2_mesh-bvh,PASS,100.000%
+first_frame_safe_stop_2_mesh-bvh,PASS,100.000%
+monotonic_safety_and_ttc_2_mesh-bvh,PASS,safe-stop rate and all-scenario TTC nondecreasing
+zero_ray_collisions_2_scene-bvh,PASS,960/960 collided
+full_resolution_safe_stop_2_scene-bvh,PASS,100.000%
+first_frame_safe_stop_2_scene-bvh,PASS,100.000%
+monotonic_safety_and_ttc_2_scene-bvh,PASS,safe-stop rate and all-scenario TTC nondecreasing
+zero_ray_collisions_3_true-brute,PASS,960/960 collided
+full_resolution_safe_stop_3_true-brute,PASS,100.000%
+first_frame_safe_stop_3_true-brute,PASS,100.000%
+monotonic_safety_and_ttc_3_true-brute,PASS,safe-stop rate and all-scenario TTC nondecreasing
+zero_ray_collisions_3_mesh-bvh,PASS,960/960 collided
+full_resolution_safe_stop_3_mesh-bvh,PASS,100.000%
+first_frame_safe_stop_3_mesh-bvh,PASS,100.000%
+monotonic_safety_and_ttc_3_mesh-bvh,PASS,safe-stop rate and all-scenario TTC nondecreasing
+zero_ray_collisions_3_scene-bvh,PASS,960/960 collided
+full_resolution_safe_stop_3_scene-bvh,PASS,100.000%
+first_frame_safe_stop_3_scene-bvh,PASS,100.000%
+monotonic_safety_and_ttc_3_scene-bvh,PASS,safe-stop rate and all-scenario TTC nondecreasing
+zero_ray_collisions_4_true-brute,PASS,960/960 collided
+full_resolution_safe_stop_4_true-brute,PASS,100.000%
+first_frame_safe_stop_4_true-brute,PASS,100.000%
+monotonic_safety_and_ttc_4_true-brute,PASS,safe-stop rate and all-scenario TTC nondecreasing
+zero_ray_collisions_4_mesh-bvh,PASS,960/960 collided
+full_resolution_safe_stop_4_mesh-bvh,PASS,100.000%
+first_frame_safe_stop_4_mesh-bvh,PASS,100.000%
+monotonic_safety_and_ttc_4_mesh-bvh,PASS,safe-stop rate and all-scenario TTC nondecreasing
+zero_ray_collisions_4_scene-bvh,PASS,960/960 collided
+full_resolution_safe_stop_4_scene-bvh,PASS,100.000%
+first_frame_safe_stop_4_scene-bvh,PASS,100.000%
+monotonic_safety_and_ttc_4_scene-bvh,PASS,safe-stop rate and all-scenario TTC nondecreasing
+shared_timing_mapping,PASS,"identical budget kind, selected p95, ray, and 1x/100/120 timing metadata cross-applied to every speed"
+full_reporting,PASS,"summary, curves, pairs, timing, attribution, adverse, conclusions, gates"

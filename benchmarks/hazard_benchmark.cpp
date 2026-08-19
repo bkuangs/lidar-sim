@@ -292,6 +292,25 @@ void writeTrial(
         << ",true,true,true\n";
 }
 
+void writeSpeedTrial(
+    std::ofstream &csv,
+    const char *mode,
+    const HazardScenario &scenario,
+    int ray_count,
+    const char *control,
+    const HazardResult &result)
+{
+    csv << mode << ',' << scenario.scenario_id << ',' << scenario.speed << ','
+        << scenario.initial_clearance << ',' << scenario.hazard.diameter << ','
+        << scenario.lateral_offset << ',' << scenario.azimuth_phase << ','
+        << ray_count << ',' << control << ','
+        << (result.outcome == HazardOutcome::SafeStop ? "SafeStop" : "Collision")
+        << ',' << (result.detected ? "true" : "false") << ','
+        << result.detection_range << ',' << result.unbraked_ttc << ','
+        << result.stopping_margin << ',' << result.collision_speed
+        << ",true,true,true\n";
+}
+
 void runSafety(const std::string &csv_path)
 {
     std::ofstream csv(csv_path);
@@ -380,6 +399,106 @@ void runSafety(const std::string &csv_path)
     if (!csv)
         throw std::runtime_error("failed while writing CSV: " + csv_path);
     std::cout << "[safety] wrote " << rows << " trial rows for "
+              << scenarios.size() << " scenarios to " << csv_path << '\n';
+}
+
+void runSpeedSafety(const std::string &csv_path)
+{
+    std::ofstream csv(csv_path);
+    if (!csv)
+        throw std::runtime_error("cannot open CSV for writing: " + csv_path);
+    csv << std::setprecision(17);
+    csv << "mode,scenario_id,speed_mps,initial_clearance,hazard_diameter,"
+           "lateral_offset,azimuth_phase,ray_count,control,outcome,detected,"
+           "detection_range,unbraked_ttc,stopping_margin,collision_speed,"
+           "hit_flags_equal,object_ids_equal,ranges_equal\n";
+
+    const std::vector<HazardScenario> scenarios = generateHazardSpeedScenarios();
+    constexpr size_t expectedScenarios =
+        hazardSpeedSafetySpeeds.size() *
+        hazardSpeedSafetyClearances.size() *
+        hazardDiameters.size() * hazardOffsets.size() * hazardPhaseCount;
+    if (scenarios.size() != expectedScenarios)
+        throw std::runtime_error(
+            "speed-safety scenario generation produced incomplete coverage");
+
+    size_t rows = 0;
+    for (const HazardScenario &scenario : scenarios)
+    {
+        const BenchmarkWorld world = makeSafetyWorld(scenario);
+        for (const int ray_count : nestedHorizontalRayLayoutCounts)
+        {
+            const std::vector<double> layout =
+                nestedHorizontalRayLayout(ray_count, scenario.azimuth_phase);
+            const HazardResult result = runHazardSpeedTrial(
+                scenario,
+                [&](const HazardScenario &trial, const HazardFrame &frame) {
+                    const Eigen::Isometry3d pose =
+                        lidarPoseFromVehicle(frame.vehicle, VehicleConfig{});
+                    const Lidar lidar = makeHorizontalLidar(pose);
+                    const ScanResult brute =
+                        scanWorld(world, TraceMode::TrueBrute, lidar, layout);
+                    const ScanResult mesh_bvh =
+                        scanWorld(world, TraceMode::MeshBvh, lidar, layout);
+                    const ScanResult scene_bvh =
+                        scanWorld(world, TraceMode::SceneBvh, lidar, layout);
+                    verifyParity(
+                        brute, mesh_bvh, TraceMode::MeshBvh,
+                        trial.scenario_id, ray_count, frame.index);
+                    verifyParity(
+                        brute, scene_bvh, TraceMode::SceneBvh,
+                        trial.scenario_id, ray_count, frame.index);
+                    const std::optional<double> range =
+                        scanRangeForObjectId(brute, trial.hazard.object_id);
+                    return HazardDetection{
+                        range.has_value(), range.value_or(-1.0)};
+                });
+            writeSpeedTrial(
+                csv, modeName(TraceMode::TrueBrute), scenario, ray_count,
+                "fixed_scan", result);
+            writeSpeedTrial(
+                csv, modeName(TraceMode::MeshBvh), scenario, ray_count,
+                "fixed_scan", result);
+            writeSpeedTrial(
+                csv, modeName(TraceMode::SceneBvh), scenario, ray_count,
+                "fixed_scan", result);
+            rows += 3;
+        }
+
+        const HazardResult first_frame = runHazardSpeedTrial(
+            scenario,
+            [](const HazardScenario &trial, const HazardFrame &frame) {
+                ScanResult control_scan;
+                if (frame.index == 0)
+                {
+                    control_scan.points.push_back(
+                        ScanPoint{0.0, 0.0, frame.hazard_range,
+                                  trial.hazard.object_id, true});
+                }
+                const std::optional<double> range =
+                    scanRangeForObjectId(control_scan, trial.hazard.object_id);
+                return HazardDetection{
+                    range.has_value(), range.value_or(-1.0)};
+            });
+        for (const TraceMode mode :
+             {TraceMode::TrueBrute, TraceMode::MeshBvh, TraceMode::SceneBvh})
+        {
+            writeSpeedTrial(
+                csv, modeName(mode), scenario, 361,
+                "first_frame_braking", first_frame);
+            ++rows;
+        }
+    }
+
+    constexpr size_t expectedRows = expectedScenarios *
+                                    (nestedHorizontalRayLayoutCounts.size() + 1) *
+                                    3;
+    if (rows != expectedRows)
+        throw std::runtime_error("speed-safety output has the wrong row count");
+    csv.flush();
+    if (!csv)
+        throw std::runtime_error("failed while writing CSV: " + csv_path);
+    std::cout << "[speed-safety] wrote " << rows << " trial rows for "
               << scenarios.size() << " scenarios to " << csv_path << '\n';
 }
 
@@ -624,6 +743,7 @@ void printUsage(std::ostream &output)
 {
     output << "Usage:\n"
            << "  hazard_benchmark safety --csv PATH\n"
+           << "  hazard_benchmark speed-safety --csv PATH\n"
            << "  hazard_benchmark timing --csv PATH\n"
            << "  hazard_benchmark object-count-timing --csv PATH\n"
            << "  hazard_benchmark complexity-object-count-timing --csv PATH\n";
@@ -635,6 +755,7 @@ int main(int argc, char **argv)
     if (argc != 4 || std::string(argv[2]) != "--csv" ||
         std::string(argv[3]).empty() ||
         (std::string(argv[1]) != "safety" &&
+         std::string(argv[1]) != "speed-safety" &&
          std::string(argv[1]) != "timing" &&
          std::string(argv[1]) != "object-count-timing" &&
          std::string(argv[1]) != "complexity-object-count-timing"))
@@ -648,6 +769,8 @@ int main(int argc, char **argv)
     {
         if (std::string(argv[1]) == "safety")
             runSafety(argv[3]);
+        else if (std::string(argv[1]) == "speed-safety")
+            runSpeedSafety(argv[3]);
         else if (std::string(argv[1]) == "timing")
             runTiming(argv[3]);
         else if (std::string(argv[1]) == "object-count-timing")

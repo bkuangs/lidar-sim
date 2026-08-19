@@ -35,9 +35,10 @@ endforeach()
 add_executable(nested_ray_layouts_test tests/nested_ray_layouts.cpp)
 add_executable(object_id_propagation_tests tests/object_id_propagation.cpp)
 add_executable(hazard_trial_tests tests/hazard_trial_tests.cpp)
+add_executable(hazard_speed_trial_tests tests/hazard_speed_trial_tests.cpp)
 add_executable(hazard_benchmark_tests tests/hazard_benchmark_tests.cpp)
 
-foreach(tgt nested_ray_layouts_test object_id_propagation_tests hazard_trial_tests hazard_benchmark_tests)
+foreach(tgt nested_ray_layouts_test object_id_propagation_tests hazard_trial_tests hazard_speed_trial_tests hazard_benchmark_tests)
     target_link_libraries(${tgt} PRIVATE lidar3d)
 endforeach()
 
@@ -45,12 +46,17 @@ add_test(NAME lidar_tests COMMAND lidar_tests)
 add_test(NAME nested_ray_layouts COMMAND nested_ray_layouts_test)
 add_test(NAME object_id_propagation COMMAND object_id_propagation_tests)
 add_test(NAME hazard_trial COMMAND hazard_trial_tests)
+add_test(NAME hazard_speed_trial COMMAND hazard_speed_trial_tests)
 add_test(NAME hazard_benchmark_helpers COMMAND hazard_benchmark_tests)
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_test(
     NAME hazard_analysis
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hazard_analysis.py)
+add_test(
+    NAME hazard_speed_analysis
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_hazard_speed_analysis.py)
 add_test(
     NAME object_count_analysis
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_object_count_analysis.py)
@@ -113,3 +119,19 @@ add_custom_target(
     DEPENDS hazard_benchmark
     USES_TERMINAL
     COMMENT "Running the complexity-by-object-count interaction matrix")
+
+set(HAZARD_SPEED_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/hazard_speed)
+add_custom_target(
+    hazard_speed_safety
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${HAZARD_SPEED_OUTPUT_DIR}
+    COMMAND $<TARGET_FILE:hazard_benchmark>
+            speed-safety
+            --csv ${HAZARD_SPEED_OUTPUT_DIR}/hazard_speed_trials.csv
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/analyze_hazard_speed.py
+            --trials ${HAZARD_SPEED_OUTPUT_DIR}/hazard_speed_trials.csv
+            --timing ${CMAKE_CURRENT_SOURCE_DIR}/plots/hazard_timing.csv
+            --out-dir ${HAZARD_SPEED_OUTPUT_DIR}/analysis
+    DEPENDS hazard_benchmark
+    USES_TERMINAL
+    COMMENT "Running the speed-only hazard safety extension without retiming")

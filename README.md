@@ -59,6 +59,17 @@ Generate the matched complexity-by-object-count matrix separately with:
   --out-dir plots/hazard_complexity_object_count_analysis
 ```
 
+Generate the speed-only safety extension without rerunning timing:
+
+```bash
+./build/hazard_benchmark speed-safety \
+  --csv plots/hazard_speed_trials.csv
+.venv/bin/python tools/analyze_hazard_speed.py \
+  --trials plots/hazard_speed_trials.csv \
+  --timing plots/hazard_timing.csv \
+  --out-dir plots/hazard_speed_analysis
+```
+
 `hazard_trials.csv` has every fixed-ray scenario outcome. `hazard_timing.csv`
 has 81 median/p95 rows for 3 geometry-preserving mesh complexities, 3 tracer
 modes, and 9 ray counts. The analyzer writes safety summaries, paired
@@ -70,6 +81,9 @@ analysis directory; it does not regenerate either prior publication.
 The matched matrix likewise writes a separate 243-row timing CSV and analysis
 directory, reusing the fixed-ray safety trials once without joining timing values
 from either separate sweep.
+The speed extension writes a separate 86,400-row safety CSV and analysis
+directory. It reuses only the published `1x`, 100-object timing slice and does
+not invoke a timing command or combine speed with a matrix cell.
 
 ## Published Results
 
@@ -199,3 +213,46 @@ model or hard real-time guarantees.
 
 This secondary diagnostic retains every nonzero-ray comparison; the primary
 figure above is the readable 361-ray factor matrix.
+
+### Safe stopping across vehicle speed
+
+<img src="plots/hazard_speed_analysis/hazard_speed_safe_stop_by_budget.png" alt="Actual budget-mapped safe-stop rates faceted by vehicle speed" width="100%" />
+
+This extension changes vehicle speed only, using exactly **2, 3, and 4 m/s**.
+The paired comparison predeclares one common domain with 4 m and 8 m
+front-bumper clearances, three hazard diameters, five offsets, and 32 phases:
+**960 tuples per speed and 2,880 globally unique scenarios**. The 2 m clearance
+is excluded because at 4 m/s the 2 m stopping distance reaches contact exactly;
+collision precedence makes that first-frame control invalid. The original 3 m/s
+publication retains all three clearances unchanged.
+
+**Measured answer: yes, within this common domain.** The existing `1x`,
+100-object p95 timing slice maps the 0.5/1/2/5/8 ms budgets to
+**9/17/17/129/129 rays** for true-brute and **361 rays at every budget** for
+both accelerated modes. That mapping is computed once and reused identically
+across speeds.
+
+At 0.5 ms, true-brute safe-stop rates at 2/3/4 m/s are
+**40.1% / 34.5% / 34.5%**, versus **100% / 100% / 100%** for mesh-BVH and
+scene-BVH: gains of **59.9 / 65.5 / 65.5 percentage points**. At both 1 and
+2 ms, the gains widen from **13.3** to **38.4** to **65.5 points** as speed
+rises. The per-mesh acceleration safety advantage therefore persists and
+widens at the tighter 1-2 ms budgets; it disappears at 5 and 8 ms only because
+all modes are already on the 100% safe-stop plateau. No reversal occurs.
+Mesh-BVH and scene-BVH have equal safe-stop outcomes because both map to 361
+rays, although their reused scan timings remain different.
+
+All speeds have 100% zero-ray collisions and 100% first-frame and 361-ray safe
+stops. Fixed-ray safe-stop rate and all-scenario mean unbraked TTC are
+non-decreasing at each speed, and all three tracers preserve hit, object-ID, and
+range parity. Exact rates, paired confidence intervals, collision speeds,
+undetected collisions, classifications, and gates are in
+[`plots/hazard_speed_analysis/`](plots/hazard_speed_analysis/).
+
+#### Fixed-ray speed diagnostic
+
+<img src="plots/hazard_speed_analysis/hazard_speed_fixed_ray_safety.png" alt="Mode-independent fixed-ray safe-stop curves faceted by vehicle speed" width="100%" />
+
+Each facet contains one curve because tracer outcomes are identical for a fixed
+layout. This controlled result does not cover 2 m clearance across speed,
+dynamic hazards, steering, planning, live deadlines, or general road realism.

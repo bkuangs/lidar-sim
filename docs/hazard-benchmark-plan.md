@@ -522,11 +522,130 @@ smoothing them or interpreting them as monotonic scaling.
    without new factor levels, a speed sweep, a safety metric, or unrelated
    refactoring.
 
+## Speed-only safe-stop operating envelope
+
+This extension asks one additional question: does the published
+compute-budget -> mapped-rays -> safe-stop conclusion remain valid as vehicle
+speed changes across 2, 3, and 4 m/s under the same controlled braking
+experiment?
+
+### Common paired domain and locked controls
+
+Speed is exactly `2.0, 3.0, 4.0 m/s`. The cross-speed comparison uses one
+predeclared common tuple set:
+
+| Variable | Values |
+| --- | --- |
+| Initial front-bumper clearance | 4, 8 m |
+| Cylinder diameter | 0.10, 0.25, 0.50 m |
+| Lateral offset | -0.30, -0.15, 0.00, 0.15, 0.30 m |
+| Azimuth phase | 32 deterministic values |
+
+This produces `2 clearances x 3 diameters x 5 offsets x 32 phases = 960`
+identical non-speed tuples at each speed, or 2,880 globally unique speed-aware
+scenarios. IDs encode the complete
+`speed x clearance x diameter x offset x phase` tuple.
+
+The 2 m clearance is intentionally outside this common domain. At 4 m/s with
+4 m/s^2 braking, stopping distance is exactly 2 m. The swept motion reaches
+contact at the stopping endpoint, so collision precedence makes first-frame
+braking a collision. A focused C++ regression proves both that physical outcome
+and rejection from the speed experiment. The benchmark does not generate and
+filter those cases. The original 3 m/s safety artifact remains unchanged with
+its 2/4/8 m clearances.
+
+Everything else is retained: 4 m/s^2 braking, 30 Hz frames, vehicle and hazard
+collision geometry, 28x8 hazard mesh, hazard object ID, three tracer
+definitions, 361-bin nested layouts, nine fixed ray counts, 32 phases, scan
+range/FOV, swept collision precedence, and first-frame control. Validation
+failures are errors.
+
+### Separate output and timing reuse
+
+The extension is generated separately:
+
+```bash
+./build/hazard_benchmark speed-safety \
+  --csv plots/hazard_speed_trials.csv
+python3 tools/analyze_hazard_speed.py \
+  --trials plots/hazard_speed_trials.csv \
+  --timing plots/hazard_timing.csv \
+  --out-dir plots/hazard_speed_analysis
+```
+
+The mode-keyed CSV contains exactly
+`2,880 scenarios x (9 fixed scans + 1 first-frame control) x 3 modes = 86,400`
+unique rows. Every fixed scan verifies three-mode hit, object-ID, and range
+parity before its rows are written.
+
+Speed changes vehicle physics, not scan work. Timing is not rerun. The analyzer
+requires the complete existing 81-row timing artifact, selects only its
+predeclared `1x`, 120-triangle, 100-object slice for all three modes and nine
+ray counts, computes its budget mapping once, and cross-applies the exact same
+mapping to all speeds. It does not read the object-count or matched-matrix
+timing artifacts.
+
+### Measured result
+
+The answer is **yes within the common 4/8 m-clearance domain**. The reused
+timing slice maps standard budgets as follows:
+
+| Budget (ms) | true-brute rays | mesh-BVH rays | scene-BVH rays |
+| ---: | ---: | ---: | ---: |
+| 0.5 | 9 | 361 | 361 |
+| 1 | 17 | 361 | 361 |
+| 2 | 17 | 361 | 361 |
+| 5 | 129 | 361 | 361 |
+| 8 | 129 | 361 | 361 |
+
+At 0.5 ms, true-brute safe-stop rate is 40.1%, 34.5%, and 34.5% at 2, 3,
+and 4 m/s, while each accelerated mode safely stops 100%. The corresponding
+paired gains are 59.9 points (95% CI 56.9-63.2), 65.5 points
+(62.6-68.4), and 65.5 points (62.6-68.4). At both 1 and 2 ms, the gains are
+13.3 points (11.0-15.6), 38.4 points (35.2-41.9), and 65.5 points
+(62.6-68.4).
+
+The per-mesh acceleration safety advantage therefore persists across all three
+speeds and widens with speed at the 1-2 ms budgets. It disappears at 5 and
+8 ms only because all modes map to fixed-ray points with 100% safe stops. No
+speed or budget reverses the advantage. Mesh-BVH and scene-BVH have the same
+mapped safety because both map to 361 rays at every standard budget.
+
+The mode-independent fixed-ray curve reaches 100% safe stops by 33 rays at
+2 m/s and by 65 rays at 3 and 4 m/s. Every speed has 100% zero-ray collisions
+and 100% first-frame and 361-ray safe stops. Fixed-ray safe-stop rate and
+all-scenario mean unbraked TTC are non-decreasing at each speed. Exact paired
+speed comparisons, mapped attribution, collision speeds, undetected
+collisions, and classifications remain in the speed analysis tables.
+
+### Extension acceptance gates
+
+1. Exactly 2,880 deterministic valid scenarios cover the same 960 common tuples
+   at each speed, with globally unique complete-tuple IDs. The excluded
+   4 m/s/2 m first-frame control is proven invalid under collision precedence.
+2. Output has exactly 86,400 unique rows with complete mode/ray/control
+   coverage and full three-tracer hit/object/range parity.
+3. For each speed and mode, zero-ray trials collide 100%; first-frame and
+   361-ray trials safely stop at least 99%; fixed-ray safe-stop rate and
+   all-scenario mean unbraked TTC are non-decreasing.
+4. The published `1x`, 100-object timing-to-ray mapping is reused identically
+   across speeds and is neither recomputed nor presented as speed-dependent.
+5. Analysis publishes fixed-ray and budget-mapped results for every speed/mode,
+   paired confidence intervals only over identical tuple sets, collision speed,
+   undetected collisions, and explicit acceleration classifications.
+6. No favorable trend, composite score, filtering, braking/clearance change,
+   or speed-by-mesh/object matrix is introduced.
+7. All prior safety, timing, sweep, and matrix artifacts remain byte-identical;
+   clean build, tests, analysis, and deterministic regeneration pass.
+
+This is a controlled straight-line stationary-hazard result, not evidence about
+2 m clearance across speeds, dynamic hazards, steering, planning, live
+deadlines, or general driving realism.
+
 ## Scope held for future experiments
 
 These were intentionally not included in the completed first pass:
 
-- speed sweeps and a combined speed operating envelope;
 - live deadline-limited closed-loop trials;
 - vertical layouts and progressive 2D ordering;
 - ground, debris, boxes, cones, panels, and barriers;
