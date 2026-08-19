@@ -1,12 +1,24 @@
 gate,status,detail
-convergence_budget_source,INFO,23.4125 ms (measured_110pct_slower_361_p95)
-timing_completeness,PASS,27 rows = 3 modes x 9 ray counts
+convergence_budget_source_1x,INFO,11.9107 ms (measured_110pct_slower_361_p95)
+convergence_budget_source_4x,INFO,48.4205 ms (measured_110pct_slower_361_p95)
+convergence_budget_source_16x,INFO,204.429 ms (measured_110pct_slower_361_p95)
+timing_p95_inversions_1x,INFO,true-brute 65 (5.35785 ms) -> 129 (4.82273 ms); budget mapping uses the predeclared largest measured ray count whose p95 fits
+timing_p95_inversions_4x,INFO,no adjacent-ray p95 decreases; budget mapping uses the predeclared largest measured ray count whose p95 fits
+timing_p95_inversions_16x,INFO,no adjacent-ray p95 decreases; budget mapping uses the predeclared largest measured ray count whose p95 fits
+timing_completeness,PASS,81 rows = 3 complexities x 3 modes x 9 ray counts
 fixed_ray_outcome_parity,PASS,all 38880 fixed-ray rows have identical paired outcomes
+mesh_bvh_robustness_result,INFO,overall result YES; requires lower mesh-BVH p95 than true-brute at every nonzero ray count in all three complexities; 0 exception(s) listed in hazard_complexity_robustness_exceptions.csv
 zero_ray_collisions,PASS,4320/4320 zero-ray trials collided
 full_resolution_safe_stop,PASS,361-ray safe-stop rate 100.000%
 first_frame_braking_safe_stop,PASS,first-frame-braking safe-stop rate 100.000%
 nested_ray_monotonicity,PASS,safe-stop rate and all-scenario mean unbraked TTC do not decrease
 tracer_parity,PASS,0/38880 parity rows mismatched
-ray_advantage,PASS,"scene-BVH has >=2x rays at 0.5 ms, 1 ms, 2 ms, 5 ms, 8 ms"
-safety_separation,PASS,"mapped safe-stop rates differ by >=10 pp with a paired 95% CI excluding zero at 0.5 ms, 1 ms"
-convergence,PASS,"23.4125 ms maps to true-brute=361, mesh-bvh=361, scene-bvh=361 rays; 361-ray outcomes match"
+ray_advantage_1x,PASS,"1x scene-BVH has >=2x rays at 0.5 ms, 1 ms, 2 ms, 5 ms, 8 ms"
+safety_separation_1x,PASS,"1x mapped safe-stop rates differ by >=10 pp with a paired 95% CI excluding zero at 0.5 ms, 1 ms, 2 ms"
+convergence_1x,PASS,"1x 11.9107 ms maps to true-brute=361, mesh-bvh=361, scene-bvh=361 rays; 361-ray outcomes match"
+ray_advantage_4x,PASS,"4x scene-BVH has >=2x rays at 1 ms, 2 ms, 5 ms, 8 ms"
+safety_separation_4x,PASS,"4x mapped safe-stop rates differ by >=10 pp with a paired 95% CI excluding zero at 0.5 ms, 1 ms, 2 ms"
+convergence_4x,PASS,"4x 48.4205 ms maps to true-brute=361, mesh-bvh=361, scene-bvh=361 rays; 361-ray outcomes match"
+ray_advantage_16x,PASS,"16x scene-BVH has >=2x rays at 5 ms, 8 ms"
+safety_separation_16x,PASS,"16x mapped safe-stop rates differ by >=10 pp with a paired 95% CI excluding zero at 0.5 ms, 1 ms, 2 ms, 5 ms, 8 ms"
+convergence_16x,PASS,"16x 204.429 ms maps to true-brute=361, mesh-bvh=361, scene-bvh=361 rays; 361-ray outcomes match"

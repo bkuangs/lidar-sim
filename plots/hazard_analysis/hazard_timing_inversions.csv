@@ -1,0 +1,2 @@
+complexity,mode,lower_ray_count,lower_ray_p95_ms,higher_ray_count,higher_ray_p95_ms,p95_decrease_ms
+1x,true-brute,65,5.3578499999999964,129,4.8227309499999995,0.5351190499999969

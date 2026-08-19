@@ -7,13 +7,13 @@ Usage:
 
 Required trial columns are ``mode``, ``scenario_id``, ``ray_count``, ``outcome``,
 ``detected``, ``detection_range``, ``unbraked_ttc``, ``stopping_margin``, and
-``collision_speed``. Required timing columns are ``mode``, ``ray_count``,
-``median_ms``, and ``p95_ms``. Empty outcome-specific measurements are allowed.
+``collision_speed``. Required timing columns are ``complexity``,
+``triangles_per_mesh``, ``mode``, ``ray_count``, ``median_ms``, and ``p95_ms``.
+Empty outcome-specific measurements are allowed.
 Optional ``control`` (or ``trial_kind``) rows identify first-frame-braking
 controls; optional parity booleans are checked when emitted. The benchmark
-contract requires ``true-brute``, ``mesh-bvh``, and ``scene-bvh`` at all nine
-declared fixed ray counts and reports adjacent-layer timing and budget
-attribution.
+contract requires all three declared complexity levels and tracer modes at all
+nine fixed ray counts, and reports adjacent-layer timing and budget attribution.
 """
 import argparse
 import csv
@@ -27,6 +27,12 @@ from collections import defaultdict
 STANDARD_BUDGETS_MS = (0.5, 1.0, 2.0, 5.0, 8.0)
 EXPECTED_MODES = ("true-brute", "mesh-bvh", "scene-bvh")
 EXPECTED_RAY_COUNTS = (0, 5, 9, 17, 33, 65, 129, 257, 361)
+EXPECTED_COMPLEXITIES = ("1x", "4x", "16x")
+EXPECTED_TRIANGLES_PER_MESH = {
+    "1x": 120,
+    "4x": 480,
+    "16x": 1920,
+}
 ADJACENT_MODE_PAIRS = (
     ("true-brute", "mesh-bvh"),
     ("mesh-bvh", "scene-bvh"),
@@ -54,6 +60,8 @@ TRIAL_ALIASES = {
     "collision_speed": ("collision_speed",),
 }
 TIMING_ALIASES = {
+    "complexity": ("complexity",),
+    "triangles_per_mesh": ("triangles_per_mesh",),
     "mode": ("mode",),
     "ray_count": ("ray_count", "rays"),
     "median_ms": ("median_ms",),
@@ -191,21 +199,31 @@ def read_timing(path):
         rows = []
         keys = set()
         for line, raw in enumerate(reader, start=2):
+            complexity = (raw[columns["complexity"]] or "").strip()
             mode = (raw[columns["mode"]] or "").strip()
-            if not mode:
-                raise ValidationError(f"{path}:{line}: mode must be non-empty")
+            if not complexity or not mode:
+                raise ValidationError(
+                    f"{path}:{line}: complexity and mode must be non-empty")
+            triangles_per_mesh = _number(
+                raw[columns["triangles_per_mesh"]], path, line,
+                "triangles_per_mesh")
             ray_count = _number(raw[columns["ray_count"]], path, line, "ray_count")
             median_ms = _number(raw[columns["median_ms"]], path, line, "median_ms")
             p95_ms = _number(raw[columns["p95_ms"]], path, line, "p95_ms")
+            if triangles_per_mesh <= 0 or triangles_per_mesh != int(triangles_per_mesh):
+                raise ValidationError(
+                    f"{path}:{line}: triangles_per_mesh must be a positive integer")
             if ray_count < 0 or ray_count != int(ray_count):
                 raise ValidationError(f"{path}:{line}: ray_count must be a non-negative integer")
             if median_ms < 0 or p95_ms < 0:
                 raise ValidationError(f"{path}:{line}: timing values must be non-negative")
-            key = (mode, int(ray_count))
+            key = (complexity, mode, int(ray_count))
             if key in keys:
                 raise ValidationError(f"{path}:{line}: duplicate timing row {key}")
             keys.add(key)
-            rows.append({"mode": mode, "ray_count": int(ray_count),
+            rows.append({"complexity": complexity,
+                         "triangles_per_mesh": int(triangles_per_mesh),
+                         "mode": mode, "ray_count": int(ray_count),
                          "median_ms": median_ms, "p95_ms": p95_ms})
     if not rows:
         raise ValidationError(f"{path}: CSV has no timing rows")
@@ -225,11 +243,13 @@ def validate_pairing(trials, timing):
     for row in trials:
         trial_rays[row["mode"]].add(row["ray_count"])
     for row in timing:
-        timing_rays[row["mode"]].add(row["ray_count"])
-    for mode in sorted(trial_modes):
-        if trial_rays[mode] != timing_rays[mode]:
-            raise ValidationError(
-                f"timing ray counts for {mode} do not match safety trial ray counts")
+        timing_rays[(row["complexity"], row["mode"])].add(row["ray_count"])
+    for complexity in sorted({row["complexity"] for row in timing}):
+        for mode in sorted(trial_modes):
+            if trial_rays[mode] != timing_rays[complexity, mode]:
+                raise ValidationError(
+                    f"timing ray counts for {complexity} {mode} do not match "
+                    "safety trial ray counts")
 
     scenario_sets = defaultdict(set)
     for row in trials:
@@ -252,27 +272,44 @@ def validate_pairing(trials, timing):
 def validate_expected_coverage(trials, timing):
     """Require the benchmark's declared three tracers and nine fixed ray counts."""
     expected_modes = set(EXPECTED_MODES)
+    expected_complexities = set(EXPECTED_COMPLEXITIES)
     trial_modes = {row["mode"] for row in trials}
     timing_modes = {row["mode"] for row in timing}
+    timing_complexities = {row["complexity"] for row in timing}
     if trial_modes != expected_modes:
         raise ValidationError(
             "trial modes must be exactly " + ", ".join(EXPECTED_MODES))
     if timing_modes != expected_modes:
         raise ValidationError(
             "timing modes must be exactly " + ", ".join(EXPECTED_MODES))
+    if timing_complexities != expected_complexities:
+        raise ValidationError(
+            "timing complexities must be exactly " +
+            ", ".join(EXPECTED_COMPLEXITIES))
 
     expected_rays = set(EXPECTED_RAY_COUNTS)
     for mode in EXPECTED_MODES:
         trial_rays = {row["ray_count"] for row in trials if row["mode"] == mode}
-        timing_rays = {row["ray_count"] for row in timing if row["mode"] == mode}
         if trial_rays != expected_rays:
             raise ValidationError(
                 f"trial ray counts for {mode} must be exactly "
                 + ", ".join(map(str, EXPECTED_RAY_COUNTS)))
-        if timing_rays != expected_rays:
-            raise ValidationError(
-                f"timing ray counts for {mode} must be exactly "
-                + ", ".join(map(str, EXPECTED_RAY_COUNTS)))
+        for complexity in EXPECTED_COMPLEXITIES:
+            rows = [
+                row for row in timing
+                if row["complexity"] == complexity and row["mode"] == mode
+            ]
+            timing_rays = {row["ray_count"] for row in rows}
+            if timing_rays != expected_rays:
+                raise ValidationError(
+                    f"timing ray counts for {complexity} {mode} must be exactly "
+                    + ", ".join(map(str, EXPECTED_RAY_COUNTS)))
+            triangle_counts = {row["triangles_per_mesh"] for row in rows}
+            expected_triangles = EXPECTED_TRIANGLES_PER_MESH[complexity]
+            if triangle_counts != {expected_triangles}:
+                raise ValidationError(
+                    f"{complexity} timing rows must have exactly "
+                    f"{expected_triangles} triangles per mesh")
 
 
 def paired_bootstrap_difference(left, right, metric, samples=2000, seed=20260819):
@@ -356,15 +393,17 @@ def pair_differences(grouped, comparisons):
 
 
 def map_budgets(timing, budgets):
-    by_mode = defaultdict(list)
+    by_key = defaultdict(list)
     for row in timing:
-        by_mode[row["mode"]].append(row)
+        by_key[(row["complexity"], row["mode"])].append(row)
     mappings = []
-    for mode, rows in sorted(by_mode.items()):
+    for (complexity, mode), rows in sorted(by_key.items()):
         for budget in budgets:
             fits = [row for row in rows if row["p95_ms"] <= budget]
             selected = max(fits, key=lambda row: row["ray_count"]) if fits else None
             mappings.append({
+                "complexity": complexity,
+                "triangles_per_mesh": rows[0]["triangles_per_mesh"],
                 "mode": mode,
                 "budget_ms": budget,
                 "ray_count": selected["ray_count"] if selected else 0,
@@ -379,61 +418,103 @@ def _speedup(baseline, accelerated):
 
 def timing_attribution(timing):
     """Compare same-ray scan latency for each acceleration layer."""
-    by_key = {(row["mode"], row["ray_count"]): row for row in timing}
+    by_key = {
+        (row["complexity"], row["mode"], row["ray_count"]): row
+        for row in timing
+    }
     rows = []
-    for from_mode, to_mode in ADJACENT_MODE_PAIRS:
-        for ray_count in EXPECTED_RAY_COUNTS:
-            baseline = by_key[from_mode, ray_count]
-            accelerated = by_key[to_mode, ray_count]
-            rows.append({
-                "transition": f"{from_mode}_to_{to_mode}",
-                "from_mode": from_mode,
-                "to_mode": to_mode,
-                "ray_count": ray_count,
-                "from_median_ms": baseline["median_ms"],
-                "to_median_ms": accelerated["median_ms"],
-                "median_reduction_ms": baseline["median_ms"] - accelerated["median_ms"],
-                "median_speedup": _speedup(
-                    baseline["median_ms"], accelerated["median_ms"]),
-                "from_p95_ms": baseline["p95_ms"],
-                "to_p95_ms": accelerated["p95_ms"],
-                "p95_reduction_ms": baseline["p95_ms"] - accelerated["p95_ms"],
-                "p95_speedup": _speedup(
-                    baseline["p95_ms"], accelerated["p95_ms"]),
-            })
+    for complexity in EXPECTED_COMPLEXITIES:
+        for from_mode, to_mode in ADJACENT_MODE_PAIRS:
+            for ray_count in EXPECTED_RAY_COUNTS:
+                baseline = by_key[complexity, from_mode, ray_count]
+                accelerated = by_key[complexity, to_mode, ray_count]
+                base_from = by_key["1x", from_mode, ray_count]
+                base_to = by_key["1x", to_mode, ray_count]
+                rows.append({
+                    "complexity": complexity,
+                    "triangles_per_mesh": baseline["triangles_per_mesh"],
+                    "transition": f"{from_mode}_to_{to_mode}",
+                    "from_mode": from_mode,
+                    "to_mode": to_mode,
+                    "ray_count": ray_count,
+                    "from_median_ms": baseline["median_ms"],
+                    "to_median_ms": accelerated["median_ms"],
+                    "median_reduction_ms": baseline["median_ms"] - accelerated["median_ms"],
+                    "median_speedup": _speedup(
+                        baseline["median_ms"], accelerated["median_ms"]),
+                    "from_p95_ms": baseline["p95_ms"],
+                    "to_p95_ms": accelerated["p95_ms"],
+                    "p95_reduction_ms": baseline["p95_ms"] - accelerated["p95_ms"],
+                    "p95_speedup": _speedup(
+                        baseline["p95_ms"], accelerated["p95_ms"]),
+                    "from_p95_change_vs_1x": _speedup(
+                        baseline["p95_ms"], base_from["p95_ms"]),
+                    "to_p95_change_vs_1x": _speedup(
+                        accelerated["p95_ms"], base_to["p95_ms"]),
+                })
     return rows
+
+
+def timing_p95_inversions(timing):
+    """Report adjacent ray counts whose measured p95 decreases."""
+    by_key = defaultdict(list)
+    for row in timing:
+        by_key[(row["complexity"], row["mode"])].append(row)
+    inversions = []
+    for (complexity, mode), rows in sorted(by_key.items()):
+        rows.sort(key=lambda row: row["ray_count"])
+        for previous, current in zip(rows, rows[1:]):
+            if current["p95_ms"] < previous["p95_ms"]:
+                inversions.append({
+                    "complexity": complexity,
+                    "mode": mode,
+                    "lower_ray_count": previous["ray_count"],
+                    "lower_ray_p95_ms": previous["p95_ms"],
+                    "higher_ray_count": current["ray_count"],
+                    "higher_ray_p95_ms": current["p95_ms"],
+                    "p95_decrease_ms": (
+                        previous["p95_ms"] - current["p95_ms"]),
+                })
+    return inversions
 
 
 def budget_attribution(summary, mappings, budget_differences):
     """Report mapped ray and safety consequences for each acceleration layer."""
     mapping_by_key = {
-        (row["mode"], row["budget_ms"]): row for row in mappings
+        (row["complexity"], row["mode"], row["budget_ms"]): row
+        for row in mappings
     }
     safe_rates = {
         (row["mode"], row["ray_count"]): row["estimate"]
         for row in summary if row["metric"] == "safe_stop_rate"
     }
     safe_differences = {
-        (row["budget_ms"], row["right_mode"], row["left_mode"]): row
+        (row["complexity"], row["budget_ms"],
+         row["right_mode"], row["left_mode"]): row
         for row in budget_differences
         if row["metric"] == "safe_stop_rate"
     }
-    budgets = sorted({row["budget_ms"] for row in mappings})
     rows = []
-    for budget in budgets:
+    contexts = sorted({
+        (row["complexity"], row["budget_ms"]) for row in mappings
+    }, key=lambda item: (EXPECTED_COMPLEXITIES.index(item[0]), item[1]))
+    for complexity, budget in contexts:
         for from_mode, to_mode in ADJACENT_MODE_PAIRS:
-            baseline = mapping_by_key[from_mode, budget]
-            accelerated = mapping_by_key[to_mode, budget]
-            difference = safe_differences[budget, from_mode, to_mode]
+            baseline = mapping_by_key[complexity, from_mode, budget]
+            accelerated = mapping_by_key[complexity, to_mode, budget]
+            difference = safe_differences[
+                complexity, budget, from_mode, to_mode]
             from_rate = safe_rates[from_mode, baseline["ray_count"]]
             to_rate = safe_rates[to_mode, accelerated["ray_count"]]
             if not math.isclose(
                     to_rate - from_rate, difference["difference"],
                     rel_tol=0.0, abs_tol=1e-12):
                 raise ValidationError(
-                    f"{from_mode} to {to_mode} budget attribution does not "
-                    f"match mapped safe-stop rates at {budget:g} ms")
+                    f"{complexity} {from_mode} to {to_mode} budget attribution "
+                    f"does not match mapped safe-stop rates at {budget:g} ms")
             rows.append({
+                "complexity": complexity,
+                "triangles_per_mesh": baseline["triangles_per_mesh"],
                 "budget_ms": budget,
                 "transition": f"{from_mode}_to_{to_mode}",
                 "from_mode": from_mode,
@@ -469,14 +550,16 @@ def prepare_budget_plot_data(summary, mappings, budget_differences):
 
     points_by_budget = defaultdict(dict)
     for point in mapped_rates:
-        points_by_budget[point["budget_ms"]][point["mode"]] = point
+        points_by_budget[
+            point["complexity"], point["budget_ms"]][point["mode"]] = point
 
     safe_differences = []
     for row in budget_differences:
         if row["metric"] != "safe_stop_rate" or row["difference"] is None:
             continue
         budget = row["budget_ms"]
-        points = points_by_budget[budget]
+        complexity = row["complexity"]
+        points = points_by_budget[complexity, budget]
         try:
             actual = (points[row["left_mode"]]["safe_stop_rate"] -
                       points[row["right_mode"]]["safe_stop_rate"])
@@ -491,7 +574,133 @@ def prepare_budget_plot_data(summary, mappings, budget_differences):
     return mapped_rates, sorted(
         safe_differences,
         key=lambda row: (
+            EXPECTED_COMPLEXITIES.index(row["complexity"]),
             row["plot_budget_ms"], row["right_mode"], row["left_mode"]))
+
+
+def enrich_budget_mappings(summary, mappings):
+    """Attach shared-curve safety and changes relative to the 1x timing level."""
+    rates = {
+        (row["mode"], row["ray_count"]): row["estimate"]
+        for row in summary if row["metric"] == "safe_stop_rate"
+    }
+    by_key = {
+        (row["complexity"], row["mode"], row["budget_ms"]): row
+        for row in mappings
+    }
+    enriched = []
+    for row in mappings:
+        safe_stop_rate = rates[row["mode"], row["ray_count"]]
+        baseline = by_key.get(("1x", row["mode"], row["budget_ms"]))
+        baseline_rate = (
+            rates[baseline["mode"], baseline["ray_count"]]
+            if baseline is not None else None
+        )
+        enriched.append({
+            **row,
+            "safe_stop_rate": safe_stop_rate,
+            "ray_count_change_vs_1x": (
+                row["ray_count"] - baseline["ray_count"]
+                if baseline is not None else None
+            ),
+            "safe_stop_rate_change_vs_1x": (
+                safe_stop_rate - baseline_rate
+                if baseline_rate is not None else None
+            ),
+        })
+    return enriched
+
+
+def robustness_exceptions(timing):
+    """List every nonzero ray count where mesh-BVH does not beat true-brute."""
+    by_key = {
+        (row["complexity"], row["mode"], row["ray_count"]): row
+        for row in timing
+    }
+    rows = []
+    for complexity in EXPECTED_COMPLEXITIES:
+        for ray_count in EXPECTED_RAY_COUNTS:
+            if ray_count == 0:
+                continue
+            brute = by_key[complexity, "true-brute", ray_count]
+            mesh = by_key[complexity, "mesh-bvh", ray_count]
+            if mesh["p95_ms"] >= brute["p95_ms"]:
+                rows.append({
+                    "complexity": complexity,
+                    "triangles_per_mesh": brute["triangles_per_mesh"],
+                    "ray_count": ray_count,
+                    "true_brute_p95_ms": brute["p95_ms"],
+                    "mesh_bvh_p95_ms": mesh["p95_ms"],
+                    "mesh_minus_brute_p95_ms": (
+                        mesh["p95_ms"] - brute["p95_ms"]),
+                })
+    return rows
+
+
+def robustness_summary(timing, mappings):
+    """Summarize the predeclared per-mesh BVH robustness result."""
+    timing_by_key = {
+        (row["complexity"], row["mode"], row["ray_count"]): row
+        for row in timing
+    }
+    mapping_by_key = {
+        (row["complexity"], row["mode"], row["budget_ms"]): row
+        for row in mappings
+    }
+    rows = []
+    for complexity in EXPECTED_COMPLEXITIES:
+        speedups = []
+        for ray_count in EXPECTED_RAY_COUNTS:
+            if ray_count == 0:
+                continue
+            brute = timing_by_key[complexity, "true-brute", ray_count]["p95_ms"]
+            mesh = timing_by_key[complexity, "mesh-bvh", ray_count]["p95_ms"]
+            speedups.append(_speedup(brute, mesh))
+        all_nonzero_improved = all(speedup > 1.0 for speedup in speedups)
+
+        ray_gains = []
+        safety_gains = []
+        for budget in STANDARD_BUDGETS_MS:
+            brute = mapping_by_key[complexity, "true-brute", budget]
+            mesh = mapping_by_key[complexity, "mesh-bvh", budget]
+            ray_gains.append(mesh["ray_count"] - brute["ray_count"])
+            safety_gains.append(
+                mesh["safe_stop_rate"] - brute["safe_stop_rate"])
+
+        true_361 = timing_by_key[complexity, "true-brute", 361]["p95_ms"]
+        mesh_361 = timing_by_key[complexity, "mesh-bvh", 361]["p95_ms"]
+        scene_361 = timing_by_key[complexity, "scene-bvh", 361]["p95_ms"]
+        rows.append({
+            "complexity": complexity,
+            "triangles_per_mesh": EXPECTED_TRIANGLES_PER_MESH[complexity],
+            "true_brute_p95_361_ms": true_361,
+            "mesh_bvh_p95_361_ms": mesh_361,
+            "scene_bvh_p95_361_ms": scene_361,
+            "true_brute_p95_361_change_vs_1x": _speedup(
+                true_361,
+                timing_by_key["1x", "true-brute", 361]["p95_ms"]),
+            "mesh_bvh_p95_361_change_vs_1x": _speedup(
+                mesh_361,
+                timing_by_key["1x", "mesh-bvh", 361]["p95_ms"]),
+            "scene_bvh_p95_361_change_vs_1x": _speedup(
+                scene_361,
+                timing_by_key["1x", "scene-bvh", 361]["p95_ms"]),
+            "mesh_bvh_p95_speedup_361": _speedup(true_361, mesh_361),
+            "scene_bvh_incremental_p95_speedup_361": _speedup(
+                mesh_361, scene_361),
+            "min_mesh_bvh_p95_speedup_nonzero": min(speedups),
+            "max_mesh_bvh_p95_speedup_nonzero": max(speedups),
+            "min_mesh_bvh_ray_gain_standard_budget": min(ray_gains),
+            "max_mesh_bvh_ray_gain_standard_budget": max(ray_gains),
+            "min_mesh_bvh_safe_stop_gain_standard_budget": min(safety_gains),
+            "max_mesh_bvh_safe_stop_gain_standard_budget": max(safety_gains),
+            "mesh_bvh_faster_at_all_nonzero_ray_counts": all_nonzero_improved,
+            "complexity_result": "YES" if all_nonzero_improved else "NO",
+        })
+    overall = all(row["mesh_bvh_faster_at_all_nonzero_ray_counts"] for row in rows)
+    for row in rows:
+        row["overall_robustness_result"] = "YES" if overall else "NO"
+    return rows
 
 
 def prepare_fixed_ray_safety(summary, grouped):
@@ -542,19 +751,27 @@ def prepare_fixed_ray_safety(summary, grouped):
     ]
 
 
-def _convergence_budget(timing, supplied):
+def _convergence_budgets(timing, supplied):
     if supplied is not None:
         if supplied < 0:
             raise ValidationError("convergence budget must be non-negative")
-        return supplied, "supplied"
-    p95_at_361 = {}
+    p95_at_361 = defaultdict(dict)
     for row in timing:
         if row["ray_count"] == 361:
-            p95_at_361[row["mode"]] = row["p95_ms"]
-    if set(p95_at_361) != {row["mode"] for row in timing}:
-        raise ValidationError(
-            "cannot measure convergence budget: every timing mode needs a 361-ray row")
-    return 1.1 * max(p95_at_361.values()), "measured_110pct_slower_361_p95"
+            p95_at_361[row["complexity"]][row["mode"]] = row["p95_ms"]
+    budgets = {}
+    for complexity in EXPECTED_COMPLEXITIES:
+        if set(p95_at_361[complexity]) != set(EXPECTED_MODES):
+            raise ValidationError(
+                f"cannot measure {complexity} convergence budget: every timing "
+                "mode needs a 361-ray row")
+        budgets[complexity] = (
+            supplied if supplied is not None
+            else 1.1 * max(p95_at_361[complexity].values()),
+            "supplied" if supplied is not None
+            else "measured_110pct_slower_361_p95",
+        )
+    return budgets
 
 
 def _gate(name, status, detail):
@@ -562,7 +779,7 @@ def _gate(name, status, detail):
 
 
 def evaluate_gates(trials, grouped, mappings, budget_differences,
-                   convergence_budget, control_rows=()):
+                   convergence_budgets, control_rows=()):
     gates = []
     by_ray = defaultdict(list)
     for row in trials:
@@ -642,58 +859,79 @@ def evaluate_gates(trials, grouped, mappings, budget_differences,
 
     mapping_by_budget = defaultdict(dict)
     for row in mappings:
-        mapping_by_budget[row["budget_ms"]][row["mode"]] = row["ray_count"]
-    comparable_budgets = [
-        budget for budget, rays in mapping_by_budget.items()
-        if "true-brute" in rays and "scene-bvh" in rays
-    ]
-    advantage = [
-        budget for budget in comparable_budgets
-        if mapping_by_budget[budget]["true-brute"] > 0 and
-        mapping_by_budget[budget]["scene-bvh"] >=
-        2 * mapping_by_budget[budget]["true-brute"]
-    ]
-    gates.append(_gate("ray_advantage", "PASS" if advantage else "FAIL",
-                       ("scene-BVH has >=2x rays at " +
-                        ", ".join(f"{budget:g} ms" for budget in advantage))
-                       if advantage else "no tested budget has >=2x scene-BVH rays"))
+        mapping_by_budget[
+            row["complexity"], row["budget_ms"]][row["mode"]] = row["ray_count"]
 
-    separation = []
-    for row in budget_differences:
-        if row["metric"] != "safe_stop_rate" or row["difference"] is None:
-            continue
-        if (row["right_mode"], row["left_mode"]) != ENDPOINT_MODE_PAIR:
-            continue
-        excludes_zero = row["ci_low"] > 0 or row["ci_high"] < 0
-        if abs(row["difference"]) >= .10 and excludes_zero:
-            separation.append(row["budget_ms"])
-    gates.append(_gate("safety_separation", "PASS" if separation else "FAIL",
-                       ("mapped safe-stop rates differ by >=10 pp with a paired "
-                        "95% CI excluding zero at " +
-                        ", ".join(f"{budget:g} ms" for budget in separation))
-                       if separation else "no mapped budget meets the safety separation gate"))
+    for complexity in EXPECTED_COMPLEXITIES:
+        comparable_budgets = [
+            budget for current_complexity, budget in mapping_by_budget
+            if current_complexity == complexity and
+            "true-brute" in mapping_by_budget[current_complexity, budget] and
+            "scene-bvh" in mapping_by_budget[current_complexity, budget]
+        ]
+        advantage = [
+            budget for budget in comparable_budgets
+            if mapping_by_budget[complexity, budget]["true-brute"] > 0 and
+            mapping_by_budget[complexity, budget]["scene-bvh"] >=
+            2 * mapping_by_budget[complexity, budget]["true-brute"]
+        ]
+        gates.append(_gate(
+            f"ray_advantage_{complexity}",
+            "PASS" if advantage else "FAIL",
+            (f"{complexity} scene-BVH has >=2x rays at " +
+             ", ".join(f"{budget:g} ms" for budget in advantage))
+            if advantage else
+            f"{complexity} has no tested budget with >=2x scene-BVH rays"))
 
-    convergence = mapping_by_budget.get(convergence_budget, {})
-    if set(EXPECTED_MODES) <= set(convergence):
-        all_361 = all(convergence.get(mode) == 361 for mode in EXPECTED_MODES)
-        outcomes_match = False
-        if all_361:
-            outcomes = []
-            for mode in EXPECTED_MODES:
-                outcomes.append({
-                    row["scenario_id"]: row["outcome"]
-                    for row in grouped[(mode, 361)]
-                })
-            outcomes_match = all(item == outcomes[0] for item in outcomes[1:])
-        mapped_rays = ", ".join(
-            f"{mode}={convergence.get(mode, 0)}" for mode in EXPECTED_MODES)
-        gates.append(_gate("convergence", "PASS" if all_361 and outcomes_match else "FAIL",
-                           f"{convergence_budget:g} ms maps to "
-                           f"{mapped_rays} rays; "
-                           f"361-ray outcomes {'match' if outcomes_match else 'do not match'}"))
-    else:
-        gates.append(_gate("convergence", "NOT_APPLICABLE",
-                           "all three tracer modes are required"))
+        separation = []
+        for row in budget_differences:
+            if row["complexity"] != complexity:
+                continue
+            if row["metric"] != "safe_stop_rate" or row["difference"] is None:
+                continue
+            if (row["right_mode"], row["left_mode"]) != ENDPOINT_MODE_PAIR:
+                continue
+            excludes_zero = row["ci_low"] > 0 or row["ci_high"] < 0
+            if abs(row["difference"]) >= .10 and excludes_zero:
+                separation.append(row["budget_ms"])
+        gates.append(_gate(
+            f"safety_separation_{complexity}",
+            "PASS" if separation else "FAIL",
+            (f"{complexity} mapped safe-stop rates differ by >=10 pp with a "
+             "paired 95% CI excluding zero at " +
+             ", ".join(f"{budget:g} ms" for budget in separation))
+            if separation else
+            f"{complexity} has no mapped budget meeting the safety separation gate"))
+
+        convergence_budget = convergence_budgets[complexity][0]
+        convergence = mapping_by_budget.get(
+            (complexity, convergence_budget), {})
+        if set(EXPECTED_MODES) <= set(convergence):
+            all_361 = all(
+                convergence.get(mode) == 361 for mode in EXPECTED_MODES)
+            outcomes_match = False
+            if all_361:
+                outcomes = []
+                for mode in EXPECTED_MODES:
+                    outcomes.append({
+                        row["scenario_id"]: row["outcome"]
+                        for row in grouped[(mode, 361)]
+                    })
+                outcomes_match = all(
+                    item == outcomes[0] for item in outcomes[1:])
+            mapped_rays = ", ".join(
+                f"{mode}={convergence.get(mode, 0)}"
+                for mode in EXPECTED_MODES)
+            gates.append(_gate(
+                f"convergence_{complexity}",
+                "PASS" if all_361 and outcomes_match else "FAIL",
+                f"{complexity} {convergence_budget:g} ms maps to "
+                f"{mapped_rays} rays; 361-ray outcomes "
+                f"{'match' if outcomes_match else 'do not match'}"))
+        else:
+            gates.append(_gate(
+                f"convergence_{complexity}", "NOT_APPLICABLE",
+                f"{complexity} requires all three tracer modes"))
     return gates
 
 
@@ -706,7 +944,7 @@ def _write_csv(path, rows, fields):
         writer.writerows(rows)
 
 
-def plot(summary, grouped, mappings, budget_differences, convergence_budget, out_dir):
+def plot(summary, grouped, timing, mappings, budget_differences, out_dir):
     """Render the direct budget result and secondary fixed-ray diagnostics."""
     try:
         import matplotlib
@@ -757,104 +995,95 @@ def plot(summary, grouped, mappings, budget_differences, convergence_budget, out
     fig.savefig(os.path.join(out_dir, PLOT_FILENAMES["undetected"]), dpi=140)
     plt.close(fig)
 
-    mapped_rates, safe_differences = prepare_budget_plot_data(
+    mapped_rates, _ = prepare_budget_plot_data(
         summary, mappings, budget_differences)
-    budgets = sorted({row["budget_ms"] for row in mapped_rates})
-    budget_positions = {budget: position for position, budget in enumerate(budgets)}
-    fig, (safety_ax, rays_ax) = plt.subplots(1, 2, figsize=(13, 5.8))
-    by_mode = defaultdict(list)
-    for row in mapped_rates:
-        by_mode[row["mode"]].append(row)
-    for mode, rows in sorted(by_mode.items()):
-        rows.sort(key=lambda row: row["budget_ms"])
-        style = mode_style(mode)
-        horizontal, safety_vertical, rays_vertical = {
-            "true-brute": (-14, -18, -15),
-            "mesh-bvh": (0, 9, 7),
-            "scene-bvh": (14, -34, -31),
-        }.get(mode, (8, 8, 8))
-        xs = [budget_positions[row["budget_ms"]] for row in rows]
-        safety_ax.plot(xs, [row["safe_stop_rate"] for row in rows],
-                       marker=style["marker"], color=style["color"],
-                       label=style["label"])
-        rays_ax.plot(xs, [row["ray_count"] for row in rows],
-                     marker=style["marker"], color=style["color"],
-                     label=style["label"])
-        for x, row in zip(xs, rows):
-            safety_ax.annotate(
-                f"{row['safe_stop_rate']:.1%}", (x, row["safe_stop_rate"]),
-                xytext=(horizontal, safety_vertical), textcoords="offset points",
-                ha="right" if horizontal < 0 else (
-                    "left" if horizontal > 0 else "center"), fontsize=8,
-                color=style["color"])
-            rays_ax.annotate(
-                f"{row['ray_count']} rays", (x, row["ray_count"]),
-                xytext=(horizontal, rays_vertical),
-                textcoords="offset points",
-                ha="right" if horizontal < 0 else (
-                    "left" if horizontal > 0 else "center"), fontsize=8,
-                color=style["color"])
+    fig, (latency_ax, rays_ax, safety_ax) = plt.subplots(
+        1, 3, figsize=(17, 5.5))
 
-    tick_labels = [f"{budget:g}" for budget in budgets]
-    for ax in (safety_ax, rays_ax):
-        ax.set_xticks(range(len(budgets)), tick_labels)
-        ax.set_xlabel("discrete p95 scan budget (ms; this machine)")
+    complexity_x = {
+        complexity: int(complexity[:-1])
+        for complexity in EXPECTED_COMPLEXITIES
+    }
+    for mode in EXPECTED_MODES:
+        rows = [
+            row for row in timing
+            if row["mode"] == mode and row["ray_count"] == 361
+        ]
+        rows.sort(key=lambda row: EXPECTED_COMPLEXITIES.index(row["complexity"]))
+        style = mode_style(mode)
+        latency_ax.plot(
+            [complexity_x[row["complexity"]] for row in rows],
+            [row["p95_ms"] for row in rows],
+            marker=style["marker"], color=style["color"],
+            label=style["label"])
+    latency_ax.set_xscale("log", base=2)
+    latency_ax.set_yscale("log")
+    latency_ax.set_xticks(
+        [complexity_x[item] for item in EXPECTED_COMPLEXITIES],
+        EXPECTED_COMPLEXITIES)
+    latency_ax.set_title("(a) Same-ray p95 at 361 rays")
+    latency_ax.set_xlabel("triangle-count multiplier")
+    latency_ax.set_ylabel("p95 complete-scan latency (ms, log scale)")
+    latency_ax.grid(True, alpha=.3)
+    latency_ax.legend()
+
+    contexts = [
+        (complexity, budget)
+        for complexity in EXPECTED_COMPLEXITIES
+        for budget in STANDARD_BUDGETS_MS
+    ]
+    positions = {
+        context: index for index, context in enumerate(contexts)
+    }
+    for complexity_index, complexity in enumerate(EXPECTED_COMPLEXITIES):
+        for mode in EXPECTED_MODES:
+            rows = [
+                row for row in mapped_rates
+                if row["complexity"] == complexity and
+                row["mode"] == mode and
+                row["budget_ms"] in STANDARD_BUDGETS_MS
+            ]
+            rows.sort(key=lambda row: row["budget_ms"])
+            style = mode_style(mode)
+            xs = [positions[complexity, row["budget_ms"]] for row in rows]
+            label = style["label"] if complexity_index == 0 else None
+            rays_ax.plot(
+                xs, [row["ray_count"] for row in rows],
+                marker=style["marker"], color=style["color"], label=label)
+            safety_ax.plot(
+                xs, [row["safe_stop_rate"] for row in rows],
+                marker=style["marker"], color=style["color"], label=label)
+
+    tick_labels = [
+        f"{complexity}\n{budget:g}"
+        for complexity, budget in contexts
+    ]
+    for ax in (rays_ax, safety_ax):
+        ax.set_xticks(range(len(contexts)), tick_labels)
+        ax.set_xlabel("complexity and discrete p95 budget (ms)")
         ax.grid(True, alpha=.3)
         ax.legend(loc="lower right")
-    safety_ax.set_title("(a) Actual safe-stop rate at mapped rays")
-    safety_ax.set_ylabel("safe-stop rate")
-    safety_ax.yaxis.set_major_formatter(PercentFormatter(1.0))
-    safety_ax.set_ylim(0, 1.08)
-    rays_ax.set_title("(b) Fixed rays afforded by the same budget")
+        for boundary in (
+                len(STANDARD_BUDGETS_MS) - .5,
+                2 * len(STANDARD_BUDGETS_MS) - .5):
+            ax.axvline(boundary, color="#777777", linewidth=.8, alpha=.5)
+    rays_ax.set_title("(b) Budget-mapped fixed rays")
     rays_ax.set_ylabel("largest tested ray count whose p95 fits")
     rays_ax.set_ylim(bottom=0)
-
-    convergence_x = next(
-        (budget_positions[budget] for budget in budgets
-         if math.isclose(budget, convergence_budget, rel_tol=0.0, abs_tol=1e-12)),
-        None)
-    if convergence_x is not None:
-        for ax in (safety_ax, rays_ax):
-            ax.axvline(convergence_x, color="#555555", linestyle="--",
-                       linewidth=1.0, alpha=.7)
-        rays_ax.text(convergence_x, rays_ax.get_ylim()[1] * .72,
-                     "convergence budget\nall modes: 361 rays",
-                     ha="center", va="center", fontsize=8,
-                     bbox=dict(facecolor="white", edgecolor="#777777", alpha=.85))
-
-    difference_by_budget = {
-        (row["plot_budget_ms"], row["right_mode"], row["left_mode"]): row
-        for row in safe_differences
-    }
-    difference_cells = []
-    difference_labels = []
-    for from_mode, to_mode in ADJACENT_MODE_PAIRS:
-        cells = []
-        for budget in budgets:
-            row = difference_by_budget[budget, from_mode, to_mode]
-            cells.append(
-                f"{row['difference'] * 100:+.1f}\n"
-                f"[{row['ci_low'] * 100:+.1f}, {row['ci_high'] * 100:+.1f}]")
-        difference_cells.append(cells)
-        difference_labels.append(
-            f"{mode_style(to_mode)['label']} - {mode_style(from_mode)['label']} (pp)\n"
-            "paired 95% CI")
-    difference_table = safety_ax.table(
-        cellText=difference_cells,
-        rowLabels=difference_labels,
-        cellLoc="center", rowLoc="center", bbox=[0.0, -.60, 1.0, .38])
-    difference_table.auto_set_font_size(False)
-    difference_table.set_fontsize(7)
+    safety_ax.set_title("(c) Safe-stop rate at mapped rays")
+    safety_ax.set_ylabel("safe-stop rate on the shared fixed-ray curve")
+    safety_ax.yaxis.set_major_formatter(PercentFormatter(1.0))
+    safety_ax.set_ylim(0, 1.08)
 
     fig.suptitle(
-        "Machine-specific p95 budget mapping: budget → afforded rays → safe-stop outcome",
+        "Geometry-preserving mesh-complexity robustness",
         fontsize=12)
     fig.text(
         .5, .015,
-        "Discrete estimates from complete fixed-ray scan p95 timings on this machine; "
-        "not hard real-time deadline guarantees.",
+        "Physical geometry, 100 objects, poses, rays, and the fixed-ray safety "
+        "curve are unchanged; timings are machine-specific p95 estimates.",
         ha="center", fontsize=9)
-    fig.subplots_adjust(bottom=.36, top=.84, wspace=.28)
+    fig.subplots_adjust(bottom=.20, top=.87, wspace=.30)
     fig.savefig(os.path.join(out_dir, PLOT_FILENAMES["budget"]), dpi=140)
     plt.close(fig)
 
@@ -880,10 +1109,17 @@ def analyze(trials_path, timing_path, out_dir, convergence_budget_ms=None, make_
     validate_expected_coverage(trials, timing)
     summary, grouped = summarize_trials(trials)
     prepare_fixed_ray_safety(summary, grouped)
-    convergence_budget, convergence_source = _convergence_budget(
+    convergence_budgets = _convergence_budgets(
         timing, convergence_budget_ms)
-    budgets = tuple(dict.fromkeys((*STANDARD_BUDGETS_MS, convergence_budget)))
-    mappings = map_budgets(timing, budgets)
+    mappings = []
+    for complexity in EXPECTED_COMPLEXITIES:
+        complexity_timing = [
+            row for row in timing if row["complexity"] == complexity
+        ]
+        convergence_budget = convergence_budgets[complexity][0]
+        budgets = tuple(dict.fromkeys(
+            (*STANDARD_BUDGETS_MS, convergence_budget)))
+        mappings.extend(map_budgets(complexity_timing, budgets))
 
     same_ray = []
     for from_mode, to_mode in COMPARISON_MODE_PAIRS:
@@ -897,35 +1133,78 @@ def analyze(trials_path, timing_path, out_dir, convergence_budget_ms=None, make_
 
     mapping_by_budget = defaultdict(dict)
     for mapping in mappings:
-        mapping_by_budget[mapping["budget_ms"]][mapping["mode"]] = mapping["ray_count"]
+        mapping_by_budget[
+            mapping["complexity"], mapping["budget_ms"]
+        ][mapping["mode"]] = mapping["ray_count"]
     budget_comparisons = []
-    comparison_budgets = {}
-    for budget, mapped in sorted(mapping_by_budget.items()):
+    comparison_contexts = {}
+    contexts = sorted(
+        mapping_by_budget.items(),
+        key=lambda item: (
+            EXPECTED_COMPLEXITIES.index(item[0][0]), item[0][1]))
+    for (complexity, budget), mapped in contexts:
         for from_mode, to_mode in COMPARISON_MODE_PAIRS:
             left_key = (to_mode, mapped.get(to_mode, 0))
             right_key = (from_mode, mapped.get(from_mode, 0))
             if left_key in grouped and right_key in grouped:
                 comparison = (
-                    f"budget_{budget:g}_ms_{from_mode}_to_{to_mode}")
+                    f"budget_{complexity}_{budget:g}_ms_"
+                    f"{from_mode}_to_{to_mode}")
                 budget_comparisons.append((comparison, left_key, right_key))
-                comparison_budgets[comparison] = budget
+                comparison_contexts[comparison] = (complexity, budget)
     budget_differences = pair_differences(grouped, budget_comparisons)
     for row in budget_differences:
-        row["budget_ms"] = comparison_budgets[row["comparison"]]
+        row["complexity"], row["budget_ms"] = comparison_contexts[
+            row["comparison"]]
 
+    mappings = enrich_budget_mappings(summary, mappings)
     timing_layers = timing_attribution(timing)
+    timing_inversions = timing_p95_inversions(timing)
     budget_layers = budget_attribution(
         summary, mappings, budget_differences)
+    robustness = robustness_summary(timing, mappings)
+    robustness_failures = robustness_exceptions(timing)
 
     gates = evaluate_gates(
-        trials, grouped, mappings, budget_differences, convergence_budget,
+        trials, grouped, mappings, budget_differences, convergence_budgets,
         control_rows)
+    gates.insert(0, _gate(
+        "mesh_bvh_robustness_result", "INFO",
+        f"overall result {robustness[0]['overall_robustness_result']}; "
+        "requires lower mesh-BVH p95 than true-brute at every nonzero ray "
+        "count in all three complexities; "
+        f"{len(robustness_failures)} exception(s) listed in "
+        "hazard_complexity_robustness_exceptions.csv"))
     gates.insert(0, _gate(
         "fixed_ray_outcome_parity", "PASS",
         f"all {len(trials)} fixed-ray rows have identical paired outcomes"))
     gates.insert(0, _gate(
         "timing_completeness", "PASS",
-        f"{len(timing)} rows = 3 modes x 9 ray counts"))
+        f"{len(timing)} rows = 3 complexities x 3 modes x 9 ray counts"))
+    for complexity in reversed(EXPECTED_COMPLEXITIES):
+        inversions = [
+            row for row in timing_inversions
+            if row["complexity"] == complexity
+        ]
+        detail = (
+            "; ".join(
+                f"{row['mode']} {row['lower_ray_count']} "
+                f"({row['lower_ray_p95_ms']:.6g} ms) -> "
+                f"{row['higher_ray_count']} "
+                f"({row['higher_ray_p95_ms']:.6g} ms)"
+                for row in inversions)
+            if inversions else
+            "no adjacent-ray p95 decreases"
+        )
+        gates.insert(0, _gate(
+            f"timing_p95_inversions_{complexity}", "INFO",
+            detail + "; budget mapping uses the predeclared largest measured "
+            "ray count whose p95 fits"))
+    for complexity in reversed(EXPECTED_COMPLEXITIES):
+        convergence_budget, convergence_source = convergence_budgets[complexity]
+        gates.insert(0, _gate(
+            f"convergence_budget_source_{complexity}", "INFO",
+            f"{convergence_budget:g} ms ({convergence_source})"))
     os.makedirs(out_dir, exist_ok=True)
     _write_csv(os.path.join(out_dir, "hazard_summary.csv"), summary,
                ("mode", "ray_count", "metric", "metric_label", "estimate",
@@ -935,32 +1214,67 @@ def analyze(trials_path, timing_path, out_dir, convergence_budget_ms=None, make_
                 "right_ray_count", "metric", "metric_label", "difference",
                 "ci_low", "ci_high", "n_paired"))
     _write_csv(os.path.join(out_dir, "hazard_budget_mapping.csv"), mappings,
-               ("mode", "budget_ms", "ray_count", "selected_p95_ms"))
+               ("complexity", "triangles_per_mesh", "mode", "budget_ms",
+                "ray_count", "selected_p95_ms", "safe_stop_rate",
+                "ray_count_change_vs_1x",
+                "safe_stop_rate_change_vs_1x"))
     _write_csv(os.path.join(out_dir, "hazard_budget_differences.csv"), budget_differences,
-               ("budget_ms", "comparison", "left_mode", "left_ray_count",
-                "right_mode", "right_ray_count", "metric", "metric_label",
-                "difference", "ci_low", "ci_high", "n_paired"))
+               ("complexity", "budget_ms", "comparison", "left_mode",
+                "left_ray_count", "right_mode", "right_ray_count", "metric",
+                "metric_label", "difference", "ci_low", "ci_high", "n_paired"))
     _write_csv(os.path.join(out_dir, "hazard_timing_attribution.csv"), timing_layers,
-               ("transition", "from_mode", "to_mode", "ray_count",
-                "from_median_ms", "to_median_ms", "median_reduction_ms",
-                "median_speedup", "from_p95_ms", "to_p95_ms",
-                "p95_reduction_ms", "p95_speedup"))
+               ("complexity", "triangles_per_mesh", "transition", "from_mode",
+                "to_mode", "ray_count", "from_median_ms", "to_median_ms",
+                "median_reduction_ms", "median_speedup", "from_p95_ms",
+                "to_p95_ms", "p95_reduction_ms", "p95_speedup",
+                "from_p95_change_vs_1x", "to_p95_change_vs_1x"))
+    _write_csv(
+        os.path.join(out_dir, "hazard_timing_inversions.csv"),
+        timing_inversions,
+        ("complexity", "mode", "lower_ray_count", "lower_ray_p95_ms",
+         "higher_ray_count", "higher_ray_p95_ms", "p95_decrease_ms"))
     _write_csv(os.path.join(out_dir, "hazard_budget_attribution.csv"), budget_layers,
-               ("budget_ms", "transition", "from_mode", "to_mode",
-                "from_selected_p95_ms", "to_selected_p95_ms",
-                "from_ray_count", "to_ray_count", "ray_count_gain",
-                "from_safe_stop_rate", "to_safe_stop_rate",
+               ("complexity", "triangles_per_mesh", "budget_ms", "transition",
+                "from_mode", "to_mode", "from_selected_p95_ms",
+                "to_selected_p95_ms", "from_ray_count", "to_ray_count",
+                "ray_count_gain", "from_safe_stop_rate", "to_safe_stop_rate",
                 "safe_stop_rate_gain", "ci_low", "ci_high", "n_paired"))
-    gates.insert(0, _gate("convergence_budget_source", "INFO",
-                          f"{convergence_budget:g} ms ({convergence_source})"))
+    _write_csv(
+        os.path.join(out_dir, "hazard_complexity_robustness.csv"), robustness,
+        ("complexity", "triangles_per_mesh",
+         "true_brute_p95_361_ms", "mesh_bvh_p95_361_ms",
+         "scene_bvh_p95_361_ms",
+         "true_brute_p95_361_change_vs_1x",
+         "mesh_bvh_p95_361_change_vs_1x",
+         "scene_bvh_p95_361_change_vs_1x",
+         "mesh_bvh_p95_speedup_361",
+         "scene_bvh_incremental_p95_speedup_361",
+         "min_mesh_bvh_p95_speedup_nonzero",
+         "max_mesh_bvh_p95_speedup_nonzero",
+         "min_mesh_bvh_ray_gain_standard_budget",
+         "max_mesh_bvh_ray_gain_standard_budget",
+         "min_mesh_bvh_safe_stop_gain_standard_budget",
+         "max_mesh_bvh_safe_stop_gain_standard_budget",
+         "mesh_bvh_faster_at_all_nonzero_ray_counts",
+         "complexity_result", "overall_robustness_result"))
+    _write_csv(
+        os.path.join(
+            out_dir, "hazard_complexity_robustness_exceptions.csv"),
+        robustness_failures,
+        ("complexity", "triangles_per_mesh", "ray_count",
+         "true_brute_p95_ms", "mesh_bvh_p95_ms",
+         "mesh_minus_brute_p95_ms"))
     _write_csv(os.path.join(out_dir, "hazard_acceptance_gates.csv"), gates,
                ("gate", "status", "detail"))
     if make_plots:
-        plot(summary, grouped, mappings, budget_differences, convergence_budget, out_dir)
+        plot(summary, grouped, timing, mappings, budget_differences, out_dir)
     return {"summary": summary, "mappings": mappings, "paired": paired,
             "budget_differences": budget_differences,
             "timing_attribution": timing_layers,
+            "timing_inversions": timing_inversions,
             "budget_attribution": budget_layers,
+            "robustness": robustness,
+            "robustness_exceptions": robustness_failures,
             "gates": gates}
 
 

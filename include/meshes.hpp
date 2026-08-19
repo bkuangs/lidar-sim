@@ -1,7 +1,10 @@
 #pragma once
 #include "geometry.hpp"
+#include <algorithm>
 #include <cmath>
+#include <map>
 #include <memory>
+#include <utility>
 #include <vector>
 
 /**
@@ -11,6 +14,56 @@
  * regardless of vertical resolution. `makeCube` is the low-poly analytic
  * obstacle used by the scaling scenes.
  */
+
+struct TriangleMeshData
+{
+    std::vector<Vec3> vertices;
+    std::vector<Eigen::Vector3i> triangles;
+};
+
+inline TriangleMeshData subdivideTriangleFaces(
+    const TriangleMeshData &mesh,
+    unsigned passes)
+{
+    TriangleMeshData result = mesh;
+    for (unsigned pass = 0; pass < passes; ++pass)
+    {
+        std::map<std::pair<int, int>, int> midpoint_indices;
+        std::vector<Eigen::Vector3i> triangles;
+        triangles.reserve(result.triangles.size() * 4);
+
+        auto midpointIndex = [&](int first, int second)
+        {
+            const auto edge = std::minmax(first, second);
+            const std::pair<int, int> key{edge.first, edge.second};
+            const auto existing = midpoint_indices.find(key);
+            if (existing != midpoint_indices.end())
+                return existing->second;
+
+            const int index = static_cast<int>(result.vertices.size());
+            result.vertices.push_back(
+                0.5 * (result.vertices[first] + result.vertices[second]));
+            midpoint_indices.emplace(key, index);
+            return index;
+        };
+
+        for (const Eigen::Vector3i &triangle : result.triangles)
+        {
+            const int a = triangle[0];
+            const int b = triangle[1];
+            const int c = triangle[2];
+            const int ab = midpointIndex(a, b);
+            const int bc = midpointIndex(b, c);
+            const int ca = midpointIndex(c, a);
+            triangles.push_back({a, ab, ca});
+            triangles.push_back({ab, b, bc});
+            triangles.push_back({ca, bc, c});
+            triangles.push_back({ab, bc, ca});
+        }
+        result.triangles = std::move(triangles);
+    }
+    return result;
+}
 
 // Axis-aligned cube of edge `size` centered at `center` (12 triangles).
 inline std::shared_ptr<TriangleMeshGeometry> makeCube(
@@ -35,9 +88,9 @@ inline std::shared_ptr<TriangleMeshGeometry> makeCube(
 }
 
 // Tall cylindrical pillar from z=0 to z=height. Triangles ~= slices*stacks*2 + 2*slices.
-inline std::shared_ptr<TriangleMeshGeometry> makePillar(
+inline TriangleMeshData makePillarMeshData(
     double cx, double cy, double radius, double height,
-    int slices, int stacks, int objId)
+    int slices, int stacks)
 {
     std::vector<Vec3> v;
     std::vector<Eigen::Vector3i> t;
@@ -77,5 +130,15 @@ inline std::shared_ptr<TriangleMeshGeometry> makePillar(
         t.push_back({top_center, top_row + a, top_row + b});
     }
 
-    return std::make_shared<TriangleMeshGeometry>(v, t, objId);
+    return TriangleMeshData{std::move(v), std::move(t)};
+}
+
+inline std::shared_ptr<TriangleMeshGeometry> makePillar(
+    double cx, double cy, double radius, double height,
+    int slices, int stacks, int objId)
+{
+    const TriangleMeshData mesh =
+        makePillarMeshData(cx, cy, radius, height, slices, stacks);
+    return std::make_shared<TriangleMeshGeometry>(
+        mesh.vertices, mesh.triangles, objId);
 }

@@ -18,21 +18,39 @@ class HazardAnalysisTest(unittest.TestCase):
     def test_budget_mapping_selects_largest_p95_fit_and_zero(self):
         timing = analyze_hazard.read_timing(os.path.join(FIXTURES, "hazard_timing.csv"))
         mappings = analyze_hazard.map_budgets(timing, (0.01, 0.5, 5.0))
-        by_key = {(row["mode"], row["budget_ms"]): row["ray_count"] for row in mappings}
-        self.assertEqual(0, by_key["true-brute", 0.01])
-        self.assertEqual(5, by_key["true-brute", 0.5])
-        self.assertEqual(9, by_key["mesh-bvh", 0.5])
-        self.assertEqual(17, by_key["scene-bvh", 0.5])
-        self.assertEqual(361, by_key["scene-bvh", 5.0])
+        by_key = {
+            (row["complexity"], row["mode"], row["budget_ms"]): row["ray_count"]
+            for row in mappings
+        }
+        self.assertEqual(0, by_key["1x", "true-brute", 0.01])
+        self.assertEqual(5, by_key["1x", "true-brute", 0.5])
+        self.assertEqual(9, by_key["1x", "mesh-bvh", 0.5])
+        self.assertEqual(17, by_key["1x", "scene-bvh", 0.5])
+        self.assertEqual(361, by_key["1x", "scene-bvh", 5.0])
+        self.assertEqual(0, by_key["16x", "true-brute", 5.0])
+        self.assertEqual(129, by_key["16x", "mesh-bvh", 5.0])
+        self.assertEqual(257, by_key["16x", "scene-bvh", 5.0])
 
-    def test_expected_coverage_requires_three_modes_and_nine_ray_counts(self):
+    def test_expected_coverage_requires_complete_complexity_mode_ray_matrix(self):
         trials = analyze_hazard.read_trials(os.path.join(FIXTURES, "hazard_trials.csv"))
         timing = analyze_hazard.read_timing(os.path.join(FIXTURES, "hazard_timing.csv"))
         analyze_hazard.validate_expected_coverage(trials, timing)
+        self.assertEqual(81, len(timing))
         with self.assertRaisesRegex(
                 analyze_hazard.ValidationError, "timing modes must be exactly"):
             analyze_hazard.validate_expected_coverage(
                 trials, [row for row in timing if row["mode"] != "mesh-bvh"])
+        with self.assertRaisesRegex(
+                analyze_hazard.ValidationError,
+                "timing complexities must be exactly"):
+            analyze_hazard.validate_expected_coverage(
+                trials, [row for row in timing if row["complexity"] != "16x"])
+        wrong_triangles = [dict(row) for row in timing]
+        wrong_triangles[-1]["triangles_per_mesh"] = 1919
+        with self.assertRaisesRegex(
+                analyze_hazard.ValidationError,
+                "16x timing rows must have exactly 1920"):
+            analyze_hazard.validate_expected_coverage(trials, wrong_triangles)
 
     def test_pairing_rejects_missing_scenarios(self):
         trials = analyze_hazard.read_trials(
@@ -60,34 +78,47 @@ class HazardAnalysisTest(unittest.TestCase):
         trials = analyze_hazard.read_trials(os.path.join(FIXTURES, "hazard_trials.csv"))
         _, grouped = analyze_hazard.summarize_trials(trials)
         mappings = [
-            {"mode": "true-brute", "budget_ms": 0.01, "ray_count": 0},
-            {"mode": "scene-bvh", "budget_ms": 0.01, "ray_count": 5},
+            {"complexity": complexity, "mode": "true-brute",
+             "budget_ms": 0.01, "ray_count": 0}
+            for complexity in analyze_hazard.EXPECTED_COMPLEXITIES
+        ] + [
+            {"complexity": complexity, "mode": "scene-bvh",
+             "budget_ms": 0.01, "ray_count": 5}
+            for complexity in analyze_hazard.EXPECTED_COMPLEXITIES
         ]
         gates = analyze_hazard.evaluate_gates(
-            trials, grouped, mappings, [], 1.0)
+            trials, grouped, mappings, [], {
+                complexity: (1.0, "test")
+                for complexity in analyze_hazard.EXPECTED_COMPLEXITIES
+            })
         status = {row["gate"]: row["status"] for row in gates}
-        self.assertEqual("FAIL", status["ray_advantage"])
+        self.assertEqual("FAIL", status["ray_advantage_1x"])
 
-    def test_analysis_handles_zero_rays_and_measured_convergence(self):
+    def test_analysis_handles_zero_rays_and_per_complexity_convergence(self):
         out_dir = os.path.join(ROOT, "tests", "generated_hazard_analysis")
         self.addCleanup(lambda: shutil.rmtree(out_dir, ignore_errors=True))
         result = analyze_hazard.analyze(
             os.path.join(FIXTURES, "hazard_trials.csv"),
             os.path.join(FIXTURES, "hazard_timing.csv"),
             out_dir, make_plots=False)
-        mappings = {(row["mode"], row["budget_ms"]): row["ray_count"]
+        mappings = {(row["complexity"], row["mode"], row["budget_ms"]): row["ray_count"]
                     for row in result["mappings"]}
-        self.assertEqual(361, mappings["true-brute", 11.0])
-        self.assertEqual(361, mappings["mesh-bvh", 11.0])
-        self.assertEqual(361, mappings["scene-bvh", 11.0])
+        for complexity, budget in (("1x", 11.0), ("4x", 44.0), ("16x", 176.0)):
+            self.assertEqual(361, mappings[complexity, "true-brute", budget])
+            self.assertEqual(361, mappings[complexity, "mesh-bvh", budget])
+            self.assertEqual(361, mappings[complexity, "scene-bvh", budget])
         status = {row["gate"]: row["status"] for row in result["gates"]}
         self.assertEqual("PASS", status["zero_ray_collisions"])
-        self.assertEqual("PASS", status["convergence"])
+        self.assertTrue(all(
+            status[f"convergence_{complexity}"] == "PASS"
+            for complexity in analyze_hazard.EXPECTED_COMPLEXITIES))
         self.assertTrue(os.path.isfile(os.path.join(out_dir, "hazard_budget_mapping.csv")))
         self.assertTrue(os.path.isfile(
             os.path.join(out_dir, "hazard_timing_attribution.csv")))
         self.assertTrue(os.path.isfile(
             os.path.join(out_dir, "hazard_budget_attribution.csv")))
+        self.assertTrue(os.path.isfile(
+            os.path.join(out_dir, "hazard_complexity_robustness.csv")))
 
     def test_attribution_covers_both_layers_at_every_ray_and_budget(self):
         out_dir = os.path.join(ROOT, "tests", "generated_hazard_analysis")
@@ -103,25 +134,35 @@ class HazardAnalysisTest(unittest.TestCase):
         }
         timing_by_transition = {}
         for row in result["timing_attribution"]:
-            timing_by_transition.setdefault(row["transition"], set()).add(
+            timing_by_transition.setdefault(
+                (row["complexity"], row["transition"]), set()).add(
                 row["ray_count"])
-        self.assertEqual(transitions, set(timing_by_transition))
+        self.assertEqual(
+            {
+                (complexity, transition)
+                for complexity in analyze_hazard.EXPECTED_COMPLEXITIES
+                for transition in transitions
+            },
+            set(timing_by_transition))
         self.assertTrue(all(
             ray_counts == set(analyze_hazard.EXPECTED_RAY_COUNTS)
             for ray_counts in timing_by_transition.values()))
 
-        budgets = {row["budget_ms"] for row in result["mappings"]}
+        budgets = {}
+        for row in result["mappings"]:
+            budgets.setdefault(row["complexity"], set()).add(row["budget_ms"])
         budget_by_transition = {}
         for row in result["budget_attribution"]:
-            budget_by_transition.setdefault(row["transition"], set()).add(
+            budget_by_transition.setdefault(
+                (row["complexity"], row["transition"]), set()).add(
                 row["budget_ms"])
             self.assertAlmostEqual(
                 row["to_safe_stop_rate"] - row["from_safe_stop_rate"],
                 row["safe_stop_rate_gain"])
-        self.assertEqual(transitions, set(budget_by_transition))
         self.assertTrue(all(
-            transition_budgets == budgets
-            for transition_budgets in budget_by_transition.values()))
+            budget_by_transition[complexity, transition] == budgets[complexity]
+            for complexity in analyze_hazard.EXPECTED_COMPLEXITIES
+            for transition in transitions))
 
     def test_budget_plot_data_matches_mappings_rates_and_paired_intervals(self):
         out_dir = os.path.join(ROOT, "tests", "generated_hazard_analysis")
@@ -144,7 +185,9 @@ class HazardAnalysisTest(unittest.TestCase):
 
         by_budget = {}
         for point in mapped_rates:
-            by_budget.setdefault(point["budget_ms"], {})[point["mode"]] = point
+            by_budget.setdefault(
+                (point["complexity"], point["budget_ms"]), {}
+            )[point["mode"]] = point
         source_differences = {
             row["comparison"]: row for row in result["budget_differences"]
             if row["metric"] == "safe_stop_rate"
@@ -153,10 +196,80 @@ class HazardAnalysisTest(unittest.TestCase):
             source = source_differences[difference["comparison"]]
             self.assertEqual(source["ci_low"], difference["ci_low"])
             self.assertEqual(source["ci_high"], difference["ci_high"])
-            points = by_budget[difference["plot_budget_ms"]]
+            points = by_budget[
+                difference["complexity"], difference["plot_budget_ms"]]
             actual = (points[difference["left_mode"]]["safe_stop_rate"] -
                       points[difference["right_mode"]]["safe_stop_rate"])
             self.assertAlmostEqual(difference["difference"], actual)
+
+    def test_every_complexity_maps_to_the_same_fixed_ray_safety_curve(self):
+        out_dir = os.path.join(ROOT, "tests", "generated_hazard_analysis")
+        self.addCleanup(lambda: shutil.rmtree(out_dir, ignore_errors=True))
+        result = analyze_hazard.analyze(
+            os.path.join(FIXTURES, "hazard_trials.csv"),
+            os.path.join(FIXTURES, "hazard_timing.csv"),
+            out_dir, make_plots=False)
+        rates = {}
+        for row in result["mappings"]:
+            key = (row["mode"], row["ray_count"])
+            rates.setdefault(key, set()).add(row["safe_stop_rate"])
+        self.assertTrue(all(len(values) == 1 for values in rates.values()))
+        for row in result["mappings"]:
+            if row["budget_ms"] in analyze_hazard.STANDARD_BUDGETS_MS:
+                self.assertIsNotNone(row["ray_count_change_vs_1x"])
+                self.assertIsNotNone(row["safe_stop_rate_change_vs_1x"])
+
+    def test_robustness_result_lists_every_adverse_measurement(self):
+        timing = analyze_hazard.read_timing(
+            os.path.join(FIXTURES, "hazard_timing.csv"))
+        trials = analyze_hazard.read_trials(
+            os.path.join(FIXTURES, "hazard_trials.csv"))
+        summary, _ = analyze_hazard.summarize_trials(trials)
+        mappings = analyze_hazard.enrich_budget_mappings(
+            summary,
+            analyze_hazard.map_budgets(
+                timing, analyze_hazard.STANDARD_BUDGETS_MS))
+        adverse = [dict(row) for row in timing]
+        for ray_count, p95_ms in ((5, 7.0), (17, 31.0)):
+            target = next(
+                row for row in adverse
+                if row["complexity"] == "16x" and
+                row["mode"] == "mesh-bvh" and
+                row["ray_count"] == ray_count)
+            target["p95_ms"] = p95_ms
+        robustness = analyze_hazard.robustness_summary(adverse, mappings)
+        exceptions = analyze_hazard.robustness_exceptions(adverse)
+        by_complexity = {row["complexity"]: row for row in robustness}
+        self.assertEqual("NO", by_complexity["16x"]["complexity_result"])
+        self.assertEqual("NO", robustness[0]["overall_robustness_result"])
+        self.assertEqual([5, 17], [row["ray_count"] for row in exceptions])
+        self.assertTrue(all(
+            row["mesh_bvh_p95_ms"] >= row["true_brute_p95_ms"]
+            for row in exceptions))
+
+    def test_p95_inversions_are_reported_without_changing_discrete_mapping(self):
+        timing = analyze_hazard.read_timing(
+            os.path.join(FIXTURES, "hazard_timing.csv"))
+        noisy = [dict(row) for row in timing]
+        row_65 = next(
+            row for row in noisy
+            if row["complexity"] == "1x" and
+            row["mode"] == "true-brute" and row["ray_count"] == 65)
+        row_129 = next(
+            row for row in noisy
+            if row["complexity"] == "1x" and
+            row["mode"] == "true-brute" and row["ray_count"] == 129)
+        row_65["p95_ms"] = 5.5
+        row_129["p95_ms"] = 4.5
+        inversions = analyze_hazard.timing_p95_inversions(noisy)
+        self.assertEqual(1, len(inversions))
+        self.assertEqual(65, inversions[0]["lower_ray_count"])
+        self.assertEqual(129, inversions[0]["higher_ray_count"])
+        mappings = analyze_hazard.map_budgets(noisy, (5.0,))
+        mapped = next(
+            row for row in mappings
+            if row["complexity"] == "1x" and row["mode"] == "true-brute")
+        self.assertEqual(129, mapped["ray_count"])
 
     def test_fixed_ray_plot_data_is_one_mode_independent_curve(self):
         trials = analyze_hazard.read_trials(os.path.join(FIXTURES, "hazard_trials.csv"))
