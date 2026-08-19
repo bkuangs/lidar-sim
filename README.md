@@ -37,11 +37,12 @@ Generate and analyze the hazard results with:
   --out-dir plots/hazard_analysis
 ```
 
-`hazard_trials.csv` has every fixed-ray scenario outcome; `hazard_timing.csv`
-has median and p95 scan timing. The analyzer writes summary, paired-difference,
-timing-attribution, budget-mapping, budget-attribution, and acceptance-gate
-tables plus plots under `plots/hazard_analysis/`. Use `python3` in place of
-`.venv/bin/python` when no project virtual environment is available.
+`hazard_trials.csv` has every fixed-ray scenario outcome. `hazard_timing.csv`
+has 81 median/p95 rows for 3 geometry-preserving mesh complexities, 3 tracer
+modes, and 9 ray counts. The analyzer writes safety summaries, paired
+differences, complexity-keyed timing and budget attribution, a robustness
+summary, and acceptance gates under `plots/hazard_analysis/`. Use `python3` in
+place of `.venv/bin/python` when no project virtual environment is available.
 
 ## Published Results
 
@@ -51,28 +52,46 @@ tables plus plots under `plots/hazard_analysis/`. Use `python3` in place of
 At 3,200 obstacles, scene-BVH is roughly **224x cheaper per ray** and grows much
 more slowly with scene size than the linear scan.
 
-### Hazard safety and budget mapping
+### Geometry-preserving mesh-complexity robustness
 <img src="plots/hazard_analysis/hazard_budget_safe_stop_and_rays.png" alt="Actual hazard safe-stop rates and afforded ray counts at each discrete p95 budget" width="100%" />
 
-The published controlled experiment contains 1,440 deterministic scenarios per
-mode and ray count. At 361 rays, per-mesh BVH acceleration reduces p95 scan
-latency from **21.284 ms** for true-brute to **0.524 ms** (**40.6x**); adding the
-scene BVH reduces it further to **0.197 ms** (another **2.67x**).
+The extension uniformly subdivides each existing timing triangle without
+changing the represented surface: **120, 480, and 1,920 triangles per mesh**
+(`1x`, `4x`, `16x`). All levels retain the same 100 objects, bounds, object IDs,
+poses, ray layouts, warmups, and measurements. The safety experiment is not
+rerun or multiplied by complexity; every timing series maps onto the existing
+mode-independent fixed-ray safety curve.
 
-The primary figure maps each discrete budget to the largest tested fixed ray
-count whose measured p95 fits, then maps that ray count to its observed safe-stop
-rate. At 0.5 ms, the three layers map to **9 -> 257 -> 361 rays** and **34.1% ->
-100.0% -> 100.0%** safe stops. Per-mesh BVH therefore contributes the measured
-**+65.9 percentage-point** safety gain at that budget; scene BVH contributes
-another **104 rays** but no additional safe stops because the safety curve has
-already converged. The adjacent-layer confidence intervals and every declared
-budget are reported in
-[`hazard_budget_attribution.csv`](plots/hazard_analysis/hazard_budget_attribution.csv).
+**Measured answer: yes.** Mesh-BVH p95 is lower than true-brute at every nonzero
+tested ray count in all three levels. At 361 rays, true-brute -> mesh-BVH ->
+scene-BVH p95 is **10.828 -> 0.394 -> 0.154 ms** at `1x`,
+**44.019 -> 0.427 -> 0.168 ms** at `4x`, and
+**185.844 -> 0.508 -> 0.200 ms** at `16x`. The measured per-mesh BVH speedup is
+therefore **27.5x, 103.2x, and 365.8x** respectively. From `1x` to `16x`,
+true-brute p95 grows **17.16x**, while mesh-BVH and scene-BVH p95 grow only
+**1.29x** and **1.30x**.
 
-The dashed convergence budget is 110% of the slowest mode's measured 361-ray
-p95. There, all three modes afford 361 rays and produce the same **100.0%**
-safe-stop rate. These are machine-specific p95 estimates from complete fixed-ray
-scans, not hard real-time deadline guarantees. All acceptance gates pass; see
+At the predeclared 0.5 ms budget, true-brute -> mesh-BVH -> scene-BVH maps to
+**9 -> 361 -> 361 rays** at `1x`, **0 -> 361 -> 361** at `4x`, and
+**0 -> 257 -> 361** at `16x`; the same fixed-ray curve maps those to
+**34.1% -> 100.0% -> 100.0%**, **0.0% -> 100.0% -> 100.0%**, and
+**0.0% -> 100.0% -> 100.0%** safe stops. All declared budgets and
+per-complexity convergence results are in
+[`hazard_budget_mapping.csv`](plots/hazard_analysis/hazard_budget_mapping.csv);
+the complete robustness result is in
+[`hazard_complexity_robustness.csv`](plots/hazard_analysis/hazard_complexity_robustness.csv).
+The companion
+[`hazard_complexity_robustness_exceptions.csv`](plots/hazard_analysis/hazard_complexity_robustness_exceptions.csv)
+is header-only for this `YES` run; a `NO` run lists every failing complexity,
+ray count, and p95 pair there.
+One measured p95 inversion is reported rather than smoothed away: `1x`
+true-brute decreases from **5.358 ms at 65 rays** to **4.823 ms at 129 rays**.
+The predeclared mapping still selects the largest individually measured ray
+count whose p95 fits, so the 5 ms row should be read as a discrete noisy
+estimate, not a monotonic capacity curve; see
+[`hazard_timing_inversions.csv`](plots/hazard_analysis/hazard_timing_inversions.csv).
+These are machine-specific p95 estimates, not hard real-time guarantees. All
+experiment-integrity gates pass; see
 [`hazard_acceptance_gates.csv`](plots/hazard_analysis/hazard_acceptance_gates.csv).
 
 #### Fixed-ray safety diagnostic

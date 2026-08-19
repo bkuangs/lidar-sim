@@ -250,11 +250,95 @@ separation.
 7. Add aggregation, paired intervals, and plots.
 8. Run all acceptance gates.
 
+## Geometry-preserving mesh-complexity extension
+
+This extension asks one additional question: does the measured per-mesh BVH
+benefit remain robust as triangle count increases while physical surface
+geometry and all other controls remain fixed?
+
+### Locked controls
+
+Only timing-mesh triangle count changes. The extension retains:
+
+- the same 100 timing objects and object IDs;
+- the same pillar positions, radii, heights, `12x4` slices/stacks, silhouettes,
+  AABBs, and collision footprints;
+- the same 32 poses, nine nested ray layouts, and three tracer modes;
+- 20 warmup and 200 measured complete scans per timing row;
+- the existing safety scenarios, braking model, budgets, and metrics.
+
+The safety CSV has no complexity dimension and is not regenerated for
+compute-only levels. Each `(complexity, mode)` timing series maps onto the same
+validated mode-independent fixed-ray safety curve.
+
+### Predeclared complexity levels
+
+Each subdivision pass replaces every existing triangle with four coplanar
+triangles formed from edge midpoints. It does not increase cylinder
+slices/stacks or alter the represented piecewise surface.
+
+| complexity | subdivision passes | triangles per mesh |
+| --- | ---: | ---: |
+| `1x` | 0 | 120 |
+| `4x` | 1 | 480 |
+| `16x` | 2 | 1,920 |
+
+The timing CSV contains exactly
+`3 complexities x 3 modes x 9 ray counts = 81` unique rows. Each complexity has
+its own convergence budget equal to 110% of that level's slowest measured
+361-ray p95.
+
+### Robustness result
+
+Do not assume or require monotonic latency or speedup across complexity. Report
+**yes** only if mesh-BVH p95 is lower than true-brute p95 at every nonzero
+tested ray count for all three predeclared levels; otherwise report **no** and
+identify every exception. This result is descriptive, not a gate that may be
+tuned. Report any adjacent-ray p95 inversion explicitly and retain the
+predeclared discrete mapping rule rather than smoothing or rerunning to force
+monotonicity. If the verdict is `NO`, emit one exception row per failing
+complexity/ray pair with both measured p95 values.
+
+The published run reports **yes**. At 361 rays, true-brute, mesh-BVH, and
+scene-BVH p95 values are:
+
+| complexity | true-brute (ms) | mesh-BVH (ms) | scene-BVH (ms) | per-mesh speedup |
+| --- | ---: | ---: | ---: | ---: |
+| `1x` | 10.828 | 0.394 | 0.154 | 27.5x |
+| `4x` | 44.019 | 0.427 | 0.168 | 103.2x |
+| `16x` | 185.844 | 0.508 | 0.200 | 365.8x |
+
+At 0.5 ms, the mapped true-brute/mesh-BVH/scene-BVH ray counts are
+`9/361/361`, `0/361/361`, and `0/257/361` for `1x`, `4x`, and `16x`.
+Those map to safe-stop rates of `34.1%/100%/100%`, `0%/100%/100%`, and
+`0%/100%/100%` on the unchanged fixed-ray curve.
+
+The published timing has one adjacent-ray inversion: `1x` true-brute p95 is
+5.358 ms at 65 rays and 4.823 ms at 129 rays. Consequently, the 5 ms mapping
+uses 129 rays under the predeclared largest-fitting-measurement rule. This is
+reported as timing noise, not interpreted as monotonic scaling.
+
+### Extension acceptance gates
+
+1. Subdivision produces exact `1x`/`4x`/`16x` counts while preserving object
+   IDs, AABBs, and deterministic intersections within the existing tolerance.
+2. All tracers retain complete hit/object/range parity at every complexity,
+   pose, and ray layout.
+3. Timing output has exactly 81 unique rows and retains all timing controls.
+4. `plots/hazard_trials.csv` and fixed-ray safety outcomes remain byte-for-byte
+   unchanged, with no safety duplication by complexity.
+5. Analysis emits explicit complexity-keyed latency, budget-ray, mapped
+   safe-stop, robustness, and per-level convergence results.
+6. Existing scientific controls remain passing where applicable, regardless of
+   robustness direction.
+7. Clean build, tests, analyzer, generated artifacts, and reproducibility pass
+   without another sweep or unrelated refactor.
+
 ## Scope held for future experiments
 
 These were intentionally not included in the completed first pass:
 
-- additional speeds, background-count sweeps, and mesh-complexity sweeps;
+- additional speeds and background-count sweeps;
 - live deadline-limited closed-loop trials;
 - vertical layouts and progressive 2D ordering;
 - ground, debris, boxes, cones, panels, and barriers;

@@ -12,6 +12,13 @@ namespace
 {
 constexpr double rangeTolerance = 1e-6;
 
+void assertHitEqual(const Hit &reference, const Hit &candidate)
+{
+    assert(reference.hit == candidate.hit);
+    assert(reference.objId == candidate.objId);
+    assert(std::abs(reference.t - candidate.t) <= rangeTolerance);
+}
+
 void assertParity(const ScanResult &reference, const ScanResult &candidate)
 {
     assert(reference.rays_requested == candidate.rays_requested);
@@ -23,6 +30,94 @@ void assertParity(const ScanResult &reference, const ScanResult &candidate)
         assert(reference.points[i].object_id == candidate.points[i].object_id);
         assert(std::abs(reference.points[i].range - candidate.points[i].range) <=
                rangeTolerance);
+    }
+}
+
+void testGeometryPreservingSubdivision()
+{
+    constexpr int objectId = 73;
+    const TriangleMeshData base{
+        {
+            Vec3(2.0, -1.0, 0.0),
+            Vec3(2.0, 1.0, 0.0),
+            Vec3(2.0, 0.0, 2.0),
+        },
+        {{0, 1, 2}},
+    };
+    const TriangleMeshData four_x = subdivideTriangleFaces(base, 1);
+    const TriangleMeshData sixteen_x = subdivideTriangleFaces(base, 2);
+    assert(base.triangles.size() == 1);
+    assert(four_x.triangles.size() == 4);
+    assert(sixteen_x.triangles.size() == 16);
+
+    const TriangleMeshGeometry base_geometry(
+        base.vertices, base.triangles, objectId);
+    const TriangleMeshGeometry four_x_geometry(
+        four_x.vertices, four_x.triangles, objectId);
+    const TriangleMeshGeometry sixteen_x_geometry(
+        sixteen_x.vertices, sixteen_x.triangles, objectId);
+    for (const TriangleMeshGeometry *candidate :
+         {&four_x_geometry, &sixteen_x_geometry})
+    {
+        assert((base_geometry.bounds().min() - candidate->bounds().min()).norm() <=
+               geom::Epsilon);
+        assert((base_geometry.bounds().max() - candidate->bounds().max()).norm() <=
+               geom::Epsilon);
+        assert((base_geometry.bounds().sizes() - candidate->bounds().sizes()).norm() <=
+               geom::Epsilon);
+    }
+
+    const std::vector<Vec3> targets = {
+        Vec3(2.0, 0.0, 2.0 / 3.0), // face interior
+        Vec3(2.0, 0.0, 0.0),       // original edge
+        Vec3(2.0, -0.25, 0.5),     // subdivision edge
+        Vec3(2.0, -1.0, 0.0),      // vertex
+        Vec3(2.0, 0.0, -1e-7),     // near-edge miss
+        Vec3(2.0, 1.1, 0.1),       // outside miss
+    };
+    std::vector<Ray> rays;
+    for (const Vec3 &target : targets)
+        rays.push_back(Ray{Vec3::Zero(), target.normalized()});
+    rays.push_back(Ray{Vec3(0.0, 0.0, 1.0), Vec3(0.0, 1.0, 0.0)});
+    rays.push_back(Ray{Vec3(3.0, 0.0, 0.5), Vec3(1.0, 0.0, 0.0)});
+
+    for (const Ray &ray : rays)
+    {
+        const Hit reference = base_geometry.bruteForceIntersect(ray);
+        for (const TriangleMeshGeometry *candidate :
+             {&four_x_geometry, &sixteen_x_geometry})
+        {
+            assertHitEqual(reference, candidate->bruteForceIntersect(ray));
+            assertHitEqual(reference, candidate->intersect(ray));
+        }
+    }
+}
+
+void testTimingPillarTriangleCounts()
+{
+    constexpr int objectId = 91;
+    const TriangleMeshData base =
+        makePillarMeshData(4.0, 0.15, 0.25, 2.0, 12, 4);
+    const TriangleMeshData four_x = subdivideTriangleFaces(base, 1);
+    const TriangleMeshData sixteen_x = subdivideTriangleFaces(base, 2);
+    assert(base.triangles.size() == 120);
+    assert(four_x.triangles.size() == 480);
+    assert(sixteen_x.triangles.size() == 1920);
+
+    const TriangleMeshGeometry base_geometry(
+        base.vertices, base.triangles, objectId);
+    const Ray side_ray{Vec3(0.0, 0.15, 0.75), Vec3(1.0, 0.0, 0.0)};
+    for (const TriangleMeshData *data : {&four_x, &sixteen_x})
+    {
+        const TriangleMeshGeometry candidate(
+            data->vertices, data->triangles, objectId);
+        assert((base_geometry.bounds().min() - candidate.bounds().min()).norm() <=
+               geom::Epsilon);
+        assert((base_geometry.bounds().max() - candidate.bounds().max()).norm() <=
+               geom::Epsilon);
+        assertHitEqual(
+            base_geometry.bruteForceIntersect(side_ray),
+            candidate.bruteForceIntersect(side_ray));
     }
 }
 
@@ -89,6 +184,8 @@ void testOnlyHazardObjectIdTriggersDetection()
 
 int main()
 {
+    testGeometryPreservingSubdivision();
+    testTimingPillarTriangleCounts();
     testFixedScansAndTracerParity();
     testHazardGeometryDimensions();
     testOnlyHazardObjectIdTriggersDetection();
