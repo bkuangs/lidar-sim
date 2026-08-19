@@ -51,15 +51,26 @@ At 3,200 obstacles, scene-BVH is roughly **224x cheaper per ray** and grows much
 more slowly with scene size than the linear scan.
 
 ### Hazard safety and budget mapping
-<img src="plots/hazard_analysis/hazard_safety_by_rays.png" alt="Hazard safe-stop rate by ray count" width="70%" />
-<img src="plots/hazard_analysis/hazard_budget_safety_difference.png" alt="Hazard safe-stop difference by mapped budget" width="70%" />
+<img src="plots/hazard_analysis/hazard_budget_safe_stop_and_rays.png" alt="Actual hazard safe-stop rates and afforded ray counts at each discrete p95 budget" width="100%" />
 
 The published controlled experiment contains 1,440 deterministic scenarios per
-mode and ray count. At the 0.5 ms p95 mapping on this machine, scene-BVH maps to
-361 rays and true-brute to 9 rays; safe-stop rates are **100.0%** and **34.1%**
-(paired difference **+65.9 percentage points**, 95% CI **[+63.5, +68.3]**).
-All acceptance gates pass; see
+mode and ray count. The primary figure follows the result directly: each discrete
+budget maps to the largest tested fixed ray count whose measured p95 fits, and
+that ray count maps to its observed safe-stop rate. At the 0.5 ms mapping on this
+machine, scene-BVH affords 361 rays and true-brute affords 9 rays; their actual
+safe-stop rates are **100.0%** and **34.1%**. The difference is **+65.9
+percentage points** for scene-BVH, with a paired 95% confidence interval of
+**[+63.5, +68.3] percentage points**.
+
+The dashed convergence budget is 110% of the slower mode's measured 361-ray p95.
+There, both modes afford 361 rays and produce the same **100.0%** safe-stop rate.
+These are machine-specific p95 estimates from complete fixed-ray scans, not hard
+real-time deadline guarantees. All acceptance gates pass; see
 [`hazard_acceptance_gates.csv`](plots/hazard_analysis/hazard_acceptance_gates.csv).
 
-Budget mapping is a machine-specific p95 estimate from complete fixed-ray scans,
-not a hard real-time guarantee.
+#### Fixed-ray safety diagnostic
+<img src="plots/hazard_analysis/hazard_safety_by_rays.png" alt="Mode-independent hazard safe-stop rate by fixed ray count" width="70%" />
+
+This secondary curve isolates the safety effect of ray count from compute cost.
+Only one curve is shown because true-brute and scene-BVH produce identical
+outcomes when given the same fixed rays.

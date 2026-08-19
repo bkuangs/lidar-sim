@@ -57,6 +57,11 @@ STYLE = {
     "true-brute": dict(label="true brute", color="#c1272d", marker="o"),
     "scene-bvh": dict(label="scene BVH", color="#0071bc", marker="D"),
 }
+PLOT_FILENAMES = {
+    "budget": "hazard_budget_safe_stop_and_rays.png",
+    "fixed_ray": "hazard_safety_by_rays.png",
+    "undetected": "hazard_undetected_collisions.png",
+}
 
 
 class ValidationError(ValueError):
@@ -328,6 +333,76 @@ def map_budgets(timing, budgets):
     return mappings
 
 
+def prepare_budget_plot_data(summary, mappings, budget_differences):
+    """Join mapped rays to actual rates and validate the reported paired intervals."""
+    rates = {
+        (row["mode"], row["ray_count"]): row["estimate"]
+        for row in summary if row["metric"] == "safe_stop_rate"
+    }
+    mapped_rates = []
+    for mapping in mappings:
+        key = (mapping["mode"], mapping["ray_count"])
+        if key not in rates:
+            raise ValidationError(
+                f"no safe-stop summary for mapped {mapping['mode']} {mapping['ray_count']} rays")
+        mapped_rates.append({**mapping, "safe_stop_rate": rates[key]})
+
+    points_by_budget = defaultdict(dict)
+    comparison_budgets = {}
+    for point in mapped_rates:
+        points_by_budget[point["budget_ms"]][point["mode"]] = point
+        comparison_budgets[f"budget_{point['budget_ms']:g}_ms"] = point["budget_ms"]
+
+    safe_differences = []
+    for row in budget_differences:
+        if row["metric"] != "safe_stop_rate" or row["difference"] is None:
+            continue
+        budget = comparison_budgets.get(row["comparison"])
+        if budget is None:
+            raise ValidationError(
+                f"safe-stop difference {row['comparison']} has no budget mapping")
+        points = points_by_budget[budget]
+        try:
+            actual = (points[row["left_mode"]]["safe_stop_rate"] -
+                      points[row["right_mode"]]["safe_stop_rate"])
+        except KeyError as exc:
+            raise ValidationError(
+                f"safe-stop difference {row['comparison']} has no mapped {exc.args[0]} rate"
+            ) from exc
+        if not math.isclose(actual, row["difference"], rel_tol=0.0, abs_tol=1e-12):
+            raise ValidationError(
+                f"safe-stop difference {row['comparison']} does not match mapped rates")
+        safe_differences.append({**row, "plot_budget_ms": budget})
+    return mapped_rates, sorted(safe_differences, key=lambda row: row["plot_budget_ms"])
+
+
+def prepare_fixed_ray_safety(summary):
+    """Return one safe-stop curve after verifying equal-ray mode independence."""
+    by_mode = defaultdict(dict)
+    for row in summary:
+        if row["metric"] == "safe_stop_rate":
+            by_mode[row["mode"]][row["ray_count"]] = row["estimate"]
+    if not by_mode:
+        raise ValidationError("no safe-stop summary rows to plot")
+
+    reference_mode = sorted(by_mode)[0]
+    reference = by_mode[reference_mode]
+    for mode, values in sorted(by_mode.items()):
+        if values.keys() != reference.keys():
+            raise ValidationError(
+                f"fixed-ray safe-stop counts differ between {reference_mode} and {mode}")
+        for ray_count, estimate in values.items():
+            if not math.isclose(
+                    estimate, reference[ray_count], rel_tol=0.0, abs_tol=1e-12):
+                raise ValidationError(
+                    f"fixed-ray safe-stop rate differs at {ray_count} rays "
+                    f"between {reference_mode} and {mode}")
+    return [
+        {"ray_count": ray_count, "safe_stop_rate": reference[ray_count]}
+        for ray_count in sorted(reference)
+    ]
+
+
 def _convergence_budget(timing, supplied):
     if supplied is not None:
         if supplied < 0:
@@ -485,12 +560,13 @@ def _write_csv(path, rows, fields):
         writer.writerows(rows)
 
 
-def plot(summary, mappings, budget_differences, out_dir):
-    """Render the safety curve, p95 ray mapping, and mapped safety difference."""
+def plot(summary, mappings, budget_differences, convergence_budget, out_dir):
+    """Render the direct budget result and secondary fixed-ray diagnostics."""
     try:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+        from matplotlib.ticker import PercentFormatter
     except ImportError as exc:
         raise ValidationError(
             "plotting requires matplotlib; install the repository's existing plotting "
@@ -499,67 +575,130 @@ def plot(summary, mappings, budget_differences, out_dir):
     def mode_style(mode):
         return STYLE.get(mode, dict(label=mode, color="gray", marker="x"))
 
-    for metric, filename, ylabel in (
-            ("safe_stop_rate", "hazard_safety_by_rays.png", "safe-stop rate"),
-            ("undetected_collision_rate", "hazard_undetected_collisions.png",
-             "undetected-collision rate")):
-        fig, ax = plt.subplots(figsize=(7, 4.5))
-        by_mode = defaultdict(list)
-        for row in summary:
-            if row["metric"] == metric:
-                by_mode[row["mode"]].append(row)
-        for mode, rows in by_mode.items():
-            rows.sort(key=lambda row: row["ray_count"])
-            style = mode_style(mode)
-            ax.plot([row["ray_count"] for row in rows],
-                    [row["estimate"] for row in rows],
-                    marker=style["marker"], color=style["color"], label=style["label"])
-        ax.set_xlabel("rays per frame")
-        ax.set_ylabel(ylabel)
-        ax.set_ylim(0, 1)
-        ax.grid(True, alpha=.3)
-        ax.legend()
-        fig.tight_layout()
-        fig.savefig(os.path.join(out_dir, filename), dpi=140)
-        plt.close(fig)
-
+    fixed_ray_safety = prepare_fixed_ray_safety(summary)
     fig, ax = plt.subplots(figsize=(7, 4.5))
-    by_mode = defaultdict(list)
-    for row in mappings:
-        by_mode[row["mode"]].append(row)
-    for mode, rows in by_mode.items():
-        rows.sort(key=lambda row: row["budget_ms"])
-        style = mode_style(mode)
-        ax.plot([row["budget_ms"] for row in rows],
-                [row["ray_count"] for row in rows], marker=style["marker"],
-                color=style["color"], label=style["label"])
-    ax.set_xlabel("p95 scan budget (ms)")
-    ax.set_ylabel("largest fitted ray count")
-    ax.set_ylim(bottom=0)
+    ax.plot([row["ray_count"] for row in fixed_ray_safety],
+            [row["safe_stop_rate"] for row in fixed_ray_safety],
+            marker="o", color="#4d4d4d", label="both tracers (identical outcomes)")
+    ax.set_title("Diagnostic: safe-stop outcome by fixed ray count")
+    ax.set_xlabel("fixed rays per frame (compute-independent)")
+    ax.set_ylabel("safe-stop rate")
+    ax.yaxis.set_major_formatter(PercentFormatter(1.0))
+    ax.set_ylim(0, 1.04)
     ax.grid(True, alpha=.3)
     ax.legend()
     fig.tight_layout()
-    fig.savefig(os.path.join(out_dir, "hazard_budget_rays.png"), dpi=140)
+    fig.savefig(os.path.join(out_dir, PLOT_FILENAMES["fixed_ray"]), dpi=140)
     plt.close(fig)
 
-    safe_differences = [row for row in budget_differences
-                        if row["metric"] == "safe_stop_rate" and row["difference"] is not None]
-    if safe_differences:
-        fig, ax = plt.subplots(figsize=(7, 4.5))
-        safe_differences.sort(key=lambda row: row["budget_ms"])
-        xs = [row["budget_ms"] for row in safe_differences]
-        ys = [row["difference"] for row in safe_differences]
-        lows = [row["ci_low"] for row in safe_differences]
-        highs = [row["ci_high"] for row in safe_differences]
-        ax.plot(xs, ys, marker="D", color=STYLE["scene-bvh"]["color"])
-        ax.fill_between(xs, lows, highs, color=STYLE["scene-bvh"]["color"], alpha=.15)
-        ax.axhline(0, color="black", linewidth=.8)
-        ax.set_xlabel("p95 scan budget (ms)")
-        ax.set_ylabel("scene-BVH − true-brute safe-stop rate")
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    by_mode = defaultdict(list)
+    for row in summary:
+        if row["metric"] == "undetected_collision_rate":
+            by_mode[row["mode"]].append(row)
+    for mode, rows in by_mode.items():
+        rows.sort(key=lambda row: row["ray_count"])
+        style = mode_style(mode)
+        ax.plot([row["ray_count"] for row in rows],
+                [row["estimate"] for row in rows], marker=style["marker"],
+                color=style["color"], label=style["label"])
+    ax.set_xlabel("rays per frame")
+    ax.set_ylabel("undetected-collision rate")
+    ax.set_ylim(0, 1)
+    ax.grid(True, alpha=.3)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(os.path.join(out_dir, PLOT_FILENAMES["undetected"]), dpi=140)
+    plt.close(fig)
+
+    mapped_rates, safe_differences = prepare_budget_plot_data(
+        summary, mappings, budget_differences)
+    budgets = sorted({row["budget_ms"] for row in mapped_rates})
+    budget_positions = {budget: position for position, budget in enumerate(budgets)}
+    fig, (safety_ax, rays_ax) = plt.subplots(1, 2, figsize=(13, 5.8))
+    by_mode = defaultdict(list)
+    for row in mapped_rates:
+        by_mode[row["mode"]].append(row)
+    for mode, rows in sorted(by_mode.items()):
+        rows.sort(key=lambda row: row["budget_ms"])
+        style = mode_style(mode)
+        xs = [budget_positions[row["budget_ms"]] for row in rows]
+        safety_ax.plot(xs, [row["safe_stop_rate"] for row in rows],
+                       marker=style["marker"], color=style["color"],
+                       label=style["label"])
+        rays_ax.plot(xs, [row["ray_count"] for row in rows],
+                     marker=style["marker"], color=style["color"],
+                     label=style["label"])
+        for x, row in zip(xs, rows):
+            horizontal = -10 if mode == "true-brute" else 10
+            vertical = -16 if mode == "true-brute" else (
+                -29 if row["safe_stop_rate"] > .93 else 8)
+            safety_ax.annotate(
+                f"{row['safe_stop_rate']:.1%}", (x, row["safe_stop_rate"]),
+                xytext=(horizontal, vertical), textcoords="offset points",
+                ha="right" if horizontal < 0 else "left", fontsize=8,
+                color=style["color"])
+            rays_ax.annotate(
+                f"{row['ray_count']} rays", (x, row["ray_count"]),
+                xytext=(horizontal, -15 if mode == "true-brute" else 7),
+                textcoords="offset points",
+                ha="right" if horizontal < 0 else "left", fontsize=8,
+                color=style["color"])
+
+    tick_labels = [f"{budget:g}" for budget in budgets]
+    for ax in (safety_ax, rays_ax):
+        ax.set_xticks(range(len(budgets)), tick_labels)
+        ax.set_xlabel("discrete p95 scan budget (ms; this machine)")
         ax.grid(True, alpha=.3)
-        fig.tight_layout()
-        fig.savefig(os.path.join(out_dir, "hazard_budget_safety_difference.png"), dpi=140)
-        plt.close(fig)
+        ax.legend(loc="lower right")
+    safety_ax.set_title("(a) Actual safe-stop rate at mapped rays")
+    safety_ax.set_ylabel("safe-stop rate")
+    safety_ax.yaxis.set_major_formatter(PercentFormatter(1.0))
+    safety_ax.set_ylim(0, 1.08)
+    rays_ax.set_title("(b) Fixed rays afforded by the same budget")
+    rays_ax.set_ylabel("largest tested ray count whose p95 fits")
+    rays_ax.set_ylim(bottom=0)
+
+    convergence_x = next(
+        (budget_positions[budget] for budget in budgets
+         if math.isclose(budget, convergence_budget, rel_tol=0.0, abs_tol=1e-12)),
+        None)
+    if convergence_x is not None:
+        for ax in (safety_ax, rays_ax):
+            ax.axvline(convergence_x, color="#555555", linestyle="--",
+                       linewidth=1.0, alpha=.7)
+        rays_ax.text(convergence_x, rays_ax.get_ylim()[1] * .72,
+                     "convergence budget\nboth modes: 361 rays",
+                     ha="center", va="center", fontsize=8,
+                     bbox=dict(facecolor="white", edgecolor="#777777", alpha=.85))
+
+    difference_by_budget = {
+        row["plot_budget_ms"]: row for row in safe_differences
+    }
+    difference_cells = []
+    for budget in budgets:
+        row = difference_by_budget[budget]
+        difference_cells.append(
+            f"{row['difference'] * 100:+.1f}\n"
+            f"[{row['ci_low'] * 100:+.1f}, {row['ci_high'] * 100:+.1f}]")
+    difference_table = safety_ax.table(
+        cellText=[difference_cells],
+        rowLabels=["scene-BVH − true-brute (pp)\npaired 95% CI"],
+        cellLoc="center", rowLoc="center", bbox=[0.0, -.42, 1.0, .22])
+    difference_table.auto_set_font_size(False)
+    difference_table.set_fontsize(7)
+
+    fig.suptitle(
+        "Machine-specific p95 budget mapping: budget → afforded rays → safe-stop outcome",
+        fontsize=12)
+    fig.text(
+        .5, .015,
+        "Discrete estimates from complete fixed-ray scan p95 timings on this machine; "
+        "not hard real-time deadline guarantees.",
+        ha="center", fontsize=9)
+    fig.subplots_adjust(bottom=.29, top=.84, wspace=.28)
+    fig.savefig(os.path.join(out_dir, PLOT_FILENAMES["budget"]), dpi=140)
+    plt.close(fig)
 
 
 def analyze(trials_path, timing_path, out_dir, convergence_budget_ms=None, make_plots=True):
@@ -630,7 +769,7 @@ def analyze(trials_path, timing_path, out_dir, convergence_budget_ms=None, make_
     _write_csv(os.path.join(out_dir, "hazard_acceptance_gates.csv"), gates,
                ("gate", "status", "detail"))
     if make_plots:
-        plot(summary, mappings, budget_differences, out_dir)
+        plot(summary, mappings, budget_differences, convergence_budget, out_dir)
     return {"summary": summary, "mappings": mappings, "paired": paired,
             "budget_differences": budget_differences, "gates": gates}
 
