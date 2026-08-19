@@ -1,4 +1,5 @@
 #include "hazard_trial.hpp"
+#include "hazard_timing_scene.hpp"
 #include "meshes.hpp"
 #include "scan.hpp"
 #include "scene_bvh.hpp"
@@ -6,6 +7,8 @@
 #include <cassert>
 #include <cmath>
 #include <memory>
+#include <map>
+#include <set>
 #include <vector>
 
 namespace
@@ -121,6 +124,91 @@ void testTimingPillarTriangleCounts()
     }
 }
 
+void assertObjectSpecEqual(
+    const hazard_timing_scene::ObjectSpec &reference,
+    const hazard_timing_scene::ObjectSpec &candidate)
+{
+    assert(reference.x == candidate.x);
+    assert(reference.y == candidate.y);
+    assert(reference.radius == candidate.radius);
+    assert(reference.height == candidate.height);
+    assert(reference.object_id == candidate.object_id);
+}
+
+void testNestedObjectCountTimingScenes()
+{
+    using hazard_timing_scene::ObjectSpec;
+    const std::vector<ObjectSpec> all =
+        hazard_timing_scene::makeObjectCountSpecs();
+    const std::vector<ObjectSpec> repeated =
+        hazard_timing_scene::makeObjectCountSpecs();
+    assert(all.size() == hazard_timing_scene::maxObjectCount);
+    assert(repeated.size() == all.size());
+    for (size_t index = 0; index < all.size(); ++index)
+        assertObjectSpecEqual(all[index], repeated[index]);
+
+    std::set<int> object_ids;
+    for (const ObjectSpec &spec : all)
+    {
+        assert(object_ids.insert(spec.object_id).second);
+        const TriangleMeshData mesh = makePillarMeshData(
+            spec.x, spec.y, spec.radius, spec.height,
+            hazard_timing_scene::slices, hazard_timing_scene::stacks);
+        assert(mesh.triangles.size() ==
+               hazard_timing_scene::trianglesPerObject);
+    }
+
+    const std::vector<ObjectSpec> pr2 =
+        hazard_timing_scene::makePr2ObjectSpecs();
+    std::map<int, ObjectSpec> pr2_by_id;
+    std::map<int, ObjectSpec> nested_100_by_id;
+    for (const ObjectSpec &spec : pr2)
+        pr2_by_id.emplace(spec.object_id, spec);
+    for (size_t index = 0; index < hazard_timing_scene::baseObjectCount; ++index)
+        nested_100_by_id.emplace(all[index].object_id, all[index]);
+    assert(pr2_by_id.size() == hazard_timing_scene::baseObjectCount);
+    assert(nested_100_by_id.size() == pr2_by_id.size());
+    for (const auto &entry : pr2_by_id)
+        assertObjectSpecEqual(entry.second, nested_100_by_id.at(entry.first));
+
+    double min_x = pr2.front().x - pr2.front().radius;
+    double max_x = pr2.front().x + pr2.front().radius;
+    double min_y = pr2.front().y - pr2.front().radius;
+    double max_y = pr2.front().y + pr2.front().radius;
+    for (const ObjectSpec &spec : pr2)
+    {
+        min_x = std::min(min_x, spec.x - spec.radius);
+        max_x = std::max(max_x, spec.x + spec.radius);
+        min_y = std::min(min_y, spec.y - spec.radius);
+        max_y = std::max(max_y, spec.y + spec.radius);
+    }
+
+    for (const int object_count : hazard_timing_scene::objectCounts)
+    {
+        const std::vector<ObjectSpec> prefix =
+            hazard_timing_scene::makeObjectCountSpecs(object_count);
+        assert(prefix.size() == static_cast<size_t>(object_count));
+        std::set<std::pair<int, int>> occupied_macro_cells;
+        for (size_t index = 0; index < prefix.size(); ++index)
+        {
+            assertObjectSpecEqual(prefix[index], all[index]);
+            const ObjectSpec &spec = prefix[index];
+            assert(spec.x - spec.radius >= min_x);
+            assert(spec.x + spec.radius <= max_x);
+            assert(spec.y - spec.radius >= min_y);
+            assert(spec.y + spec.radius <= max_y);
+            if (spec.object_id < 1100)
+            {
+                const int original_index = spec.object_id - 1000;
+                occupied_macro_cells.emplace(
+                    (original_index / 10) / 2,
+                    (original_index % 10) / 2);
+            }
+        }
+        assert(occupied_macro_cells.size() == 25);
+    }
+}
+
 void testFixedScansAndTracerParity()
 {
     constexpr int hazardId = 1;
@@ -186,6 +274,7 @@ int main()
 {
     testGeometryPreservingSubdivision();
     testTimingPillarTriangleCounts();
+    testNestedObjectCountTimingScenes();
     testFixedScansAndTracerParity();
     testHazardGeometryDimensions();
     testOnlyHazardObjectIdTriggersDetection();

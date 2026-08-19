@@ -37,12 +37,25 @@ Generate and analyze the hazard results with:
   --out-dir plots/hazard_analysis
 ```
 
+Generate the fixed-1x object-count extension separately with:
+
+```bash
+./build/hazard_benchmark object-count-timing \
+  --csv plots/hazard_object_count_timing.csv
+./.venv/bin/python tools/analyze_object_count.py \
+  --trials plots/hazard_trials.csv \
+  --timing plots/hazard_object_count_timing.csv \
+  --out-dir plots/hazard_object_count_analysis
+```
+
 `hazard_trials.csv` has every fixed-ray scenario outcome. `hazard_timing.csv`
 has 81 median/p95 rows for 3 geometry-preserving mesh complexities, 3 tracer
 modes, and 9 ray counts. The analyzer writes safety summaries, paired
 differences, complexity-keyed timing and budget attribution, a robustness
 summary, and acceptance gates under `plots/hazard_analysis/`. Use `python3` in
 place of `.venv/bin/python` when no project virtual environment is available.
+The object-count extension writes a separate 135-row timing CSV and separate
+analysis directory; it does not regenerate either prior publication.
 
 ## Published Results
 
@@ -100,3 +113,36 @@ experiment-integrity gates pass; see
 This secondary curve isolates the safety effect of ray count from compute cost.
 Only one curve is shown because all three tracers produce identical outcomes
 when given the same fixed rays.
+
+### Scene-BVH value versus object count at fixed mesh complexity
+<img src="plots/hazard_object_count_analysis/hazard_object_count_robustness.png" alt="Incremental scene-BVH p95 value across fixed-domain object counts" width="100%" />
+
+This extension changes only object count through **25, 50, 100, 200, and 400**.
+Every object uses the existing `1x` 120-triangle mesh. Scenes are deterministic,
+nested prefixes over one fixed spatial domain; the 100-object level preserves PR
+2's exact objects as a set. Poses, ray layouts, tracer definitions, 20 warmups,
+200 measurements, and construction exclusions are unchanged.
+
+The measured 361-ray mesh-BVH -> scene-BVH p95 values are **0.563 -> 0.182 ms
+(3.10x)** at 25 objects, **0.626 -> 0.531 ms (1.18x)** at 50,
+**1.029 -> 0.501 ms (2.05x)** at 100, **3.981 -> 1.453 ms (2.74x)** at 200,
+and **15.851 -> 0.970 ms (16.34x)** at 400. This is not a monotonic-speedup
+claim: scene-BVH had 3, 3, and 1 adverse nonzero-ray p95 comparisons at
+25/50/100 objects, respectively, but improved every nonzero-ray comparison at
+200 and 400.
+
+At 400 objects and the 0.5 ms budget, mesh-BVH -> scene-BVH maps
+**9 -> 257 rays** and **34.1% -> 100.0% safe stops**, a **+248-ray,
++65.9 percentage-point** gain on the unchanged fixed-ray curve. At 200 objects
+the same budget maps **33 -> 129 rays** and **98.4% -> 100.0%**, a **+96-ray,
++1.6-point** gain. Standard-budget safe-stop gains at 25/50/100 are zero because
+both mapped ray counts are already on the curve's 100% plateau.
+
+The publication retains all 7 mesh-to-scene adverse comparisons, 9 adjacent-ray
+p95 decreases, and 16 adjacent-count p95 decreases rather than smoothing them;
+see
+[`hazard_object_count_robustness_exceptions.csv`](plots/hazard_object_count_analysis/hazard_object_count_robustness_exceptions.csv)
+and
+[`hazard_object_count_timing_inversions.csv`](plots/hazard_object_count_analysis/hazard_object_count_timing_inversions.csv).
+Detailed timing and budget attribution are in the same directory. These remain
+machine-specific p95 estimates, not hard real-time guarantees.
