@@ -1,10 +1,12 @@
 gate,status,detail
-convergence_budget_source,INFO,12.4153 ms (measured_110pct_slower_361_p95)
-zero_ray_collisions,PASS,2880/2880 zero-ray trials collided
+convergence_budget_source,INFO,23.4125 ms (measured_110pct_slower_361_p95)
+timing_completeness,PASS,27 rows = 3 modes x 9 ray counts
+fixed_ray_outcome_parity,PASS,all 38880 fixed-ray rows have identical paired outcomes
+zero_ray_collisions,PASS,4320/4320 zero-ray trials collided
 full_resolution_safe_stop,PASS,361-ray safe-stop rate 100.000%
 first_frame_braking_safe_stop,PASS,first-frame-braking safe-stop rate 100.000%
 nested_ray_monotonicity,PASS,safe-stop rate and all-scenario mean unbraked TTC do not decrease
-tracer_parity,PASS,0/25920 parity rows mismatched
+tracer_parity,PASS,0/38880 parity rows mismatched
 ray_advantage,PASS,"scene-BVH has >=2x rays at 0.5 ms, 1 ms, 2 ms, 5 ms, 8 ms"
 safety_separation,PASS,"mapped safe-stop rates differ by >=10 pp with a paired 95% CI excluding zero at 0.5 ms, 1 ms"
-convergence,PASS,12.4153 ms maps to 361 and 361 rays; 361-ray outcomes match
+convergence,PASS,"23.4125 ms maps to true-brute=361, mesh-bvh=361, scene-bvh=361 rays; 361-ray outcomes match"

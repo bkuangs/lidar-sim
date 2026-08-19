@@ -21,8 +21,18 @@ class HazardAnalysisTest(unittest.TestCase):
         by_key = {(row["mode"], row["budget_ms"]): row["ray_count"] for row in mappings}
         self.assertEqual(0, by_key["true-brute", 0.01])
         self.assertEqual(5, by_key["true-brute", 0.5])
+        self.assertEqual(9, by_key["mesh-bvh", 0.5])
         self.assertEqual(17, by_key["scene-bvh", 0.5])
         self.assertEqual(361, by_key["scene-bvh", 5.0])
+
+    def test_expected_coverage_requires_three_modes_and_nine_ray_counts(self):
+        trials = analyze_hazard.read_trials(os.path.join(FIXTURES, "hazard_trials.csv"))
+        timing = analyze_hazard.read_timing(os.path.join(FIXTURES, "hazard_timing.csv"))
+        analyze_hazard.validate_expected_coverage(trials, timing)
+        with self.assertRaisesRegex(
+                analyze_hazard.ValidationError, "timing modes must be exactly"):
+            analyze_hazard.validate_expected_coverage(
+                trials, [row for row in timing if row["mode"] != "mesh-bvh"])
 
     def test_pairing_rejects_missing_scenarios(self):
         trials = analyze_hazard.read_trials(
@@ -68,11 +78,50 @@ class HazardAnalysisTest(unittest.TestCase):
         mappings = {(row["mode"], row["budget_ms"]): row["ray_count"]
                     for row in result["mappings"]}
         self.assertEqual(361, mappings["true-brute", 11.0])
+        self.assertEqual(361, mappings["mesh-bvh", 11.0])
         self.assertEqual(361, mappings["scene-bvh", 11.0])
         status = {row["gate"]: row["status"] for row in result["gates"]}
         self.assertEqual("PASS", status["zero_ray_collisions"])
         self.assertEqual("PASS", status["convergence"])
         self.assertTrue(os.path.isfile(os.path.join(out_dir, "hazard_budget_mapping.csv")))
+        self.assertTrue(os.path.isfile(
+            os.path.join(out_dir, "hazard_timing_attribution.csv")))
+        self.assertTrue(os.path.isfile(
+            os.path.join(out_dir, "hazard_budget_attribution.csv")))
+
+    def test_attribution_covers_both_layers_at_every_ray_and_budget(self):
+        out_dir = os.path.join(ROOT, "tests", "generated_hazard_analysis")
+        self.addCleanup(lambda: shutil.rmtree(out_dir, ignore_errors=True))
+        result = analyze_hazard.analyze(
+            os.path.join(FIXTURES, "hazard_trials.csv"),
+            os.path.join(FIXTURES, "hazard_timing.csv"),
+            out_dir,
+            make_plots=False)
+        transitions = {
+            "true-brute_to_mesh-bvh",
+            "mesh-bvh_to_scene-bvh",
+        }
+        timing_by_transition = {}
+        for row in result["timing_attribution"]:
+            timing_by_transition.setdefault(row["transition"], set()).add(
+                row["ray_count"])
+        self.assertEqual(transitions, set(timing_by_transition))
+        self.assertTrue(all(
+            ray_counts == set(analyze_hazard.EXPECTED_RAY_COUNTS)
+            for ray_counts in timing_by_transition.values()))
+
+        budgets = {row["budget_ms"] for row in result["mappings"]}
+        budget_by_transition = {}
+        for row in result["budget_attribution"]:
+            budget_by_transition.setdefault(row["transition"], set()).add(
+                row["budget_ms"])
+            self.assertAlmostEqual(
+                row["to_safe_stop_rate"] - row["from_safe_stop_rate"],
+                row["safe_stop_rate_gain"])
+        self.assertEqual(transitions, set(budget_by_transition))
+        self.assertTrue(all(
+            transition_budgets == budgets
+            for transition_budgets in budget_by_transition.values()))
 
     def test_budget_plot_data_matches_mappings_rates_and_paired_intervals(self):
         out_dir = os.path.join(ROOT, "tests", "generated_hazard_analysis")
