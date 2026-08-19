@@ -411,11 +411,122 @@ metric, smoothing, or rerun was used to force a trend.
 7. Existing scientific controls, build, tests, analyzers, and artifact
    reproducibility pass without a mesh-by-object matrix or speed sweep.
 
+## Matched mesh-complexity by object-count interaction matrix
+
+This extension asks one additional question: do the separate acceleration
+conclusions remain valid across a small matched matrix of mesh complexity and
+object count, or do joint interactions change them?
+
+### Locked matrix and timing controls
+
+The matrix is exactly:
+
+| factor | levels |
+| --- | --- |
+| mesh complexity | `1x`, `4x`, `16x` |
+| triangles per object | 120, 480, 1,920 |
+| object count | 25, 100, 400 |
+
+The mesh levels use the same exact coplanar subdivision as the complexity
+extension. The count levels use the validated deterministic nested subsets and
+canonical fixed-domain construction from the object-count extension. Each cell
+therefore changes only the two declared factors. Object positions, IDs, radii,
+heights, physical surfaces, domain, 32 poses/layout phases, nine ray counts, and
+the three tracer definitions remain fixed.
+
+Every timing row retains 20 warmup and 200 measured complete scans. World and BVH
+construction, CSV output, and aggregation stay outside timing. Hit flags, object
+IDs, and ranges must match across all three tracers at every cell, pose, and
+layout before that cell is timed.
+
+The matrix is generated as one fresh coherent batch. It does not join timing
+values from either prior sweep. The safety experiment remains byte-identical and
+is reused once for budget mapping rather than duplicated by matrix cell.
+
+### Output and descriptive analysis
+
+`plots/hazard_complexity_object_count_timing.csv` contains exactly
+`3 complexities x 3 counts x 3 modes x 9 ray counts = 243` unique rows. The
+separate `plots/hazard_complexity_object_count_analysis/` publication reports:
+
+- same-ray median and p95 reductions and speedups for true-brute to mesh-BVH and
+  mesh-BVH to scene-BVH in every cell;
+- standard-budget and per-cell convergence mappings to rays and the unchanged
+  fixed-ray safe-stop curve;
+- whether each acceleration transition wins at every nonzero ray in each cell,
+  with every adverse or equal comparison retained;
+- every adjacent p95 decrease along the ray-count, mesh-complexity, and
+  object-count axes; and
+- a primary pair of annotated `3 x 3` complexity-by-object-count heatmaps at
+  361 rays, plus a secondary all-nonzero-ray diagnostic, without a fitted
+  interaction model.
+
+No monotonicity, significance threshold, or favorable result is required. The
+publication states the measured conclusion even if either separate-sweep result
+fails in a corner.
+
+### Measured result
+
+The per-mesh conclusion remains valid across the full matrix: mesh-BVH p95 is
+lower than true-brute at every nonzero ray count in all nine cells. The
+scene-level conclusion is conditional. Scene-BVH p95 is lower than mesh-BVH at
+every nonzero ray count in five cells, but six adverse comparisons occur in four
+cells:
+
+| complexity / objects | adverse mesh-BVH to scene-BVH ray counts |
+| --- | --- |
+| `1x / 25` | 33 |
+| `4x / 25` | 129 |
+| `16x / 25` | 9, 33, 65 |
+| `16x / 100` | 257 |
+
+All `1x/100`, `1x/400`, `4x/100`, `4x/400`, and `16x/400` comparisons improve
+at every nonzero ray count. At 361 rays, both acceleration transitions improve
+in every cell; the true-brute/mesh-BVH/scene-BVH p95 values are:
+
+| complexity | objects | true-brute (ms) | mesh-BVH (ms) | scene-BVH (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| `1x` | 25 | 5.997 | 0.210 | 0.210 |
+| `1x` | 100 | 24.235 | 0.980 | 0.386 |
+| `1x` | 400 | 186.572 | 4.595 | 0.372 |
+| `4x` | 25 | 30.627 | 0.240 | 0.230 |
+| `4x` | 100 | 104.073 | 1.902 | 0.450 |
+| `4x` | 400 | 628.554 | 5.594 | 0.483 |
+| `16x` | 25 | 124.166 | 0.343 | 0.313 |
+| `16x` | 100 | 443.368 | 1.111 | 0.359 |
+| `16x` | 400 | 3436.750 | 3.603 | 0.373 |
+
+The measured answer is therefore that joint interactions do not overturn the
+per-mesh BVH result, but they do expose scene-BVH overhead at low object count
+and one `16x/100` ray setting. The batch also reports 10 ray-axis, 40
+complexity-axis, and 14 object-count-axis adjacent p95 decreases without
+smoothing them or interpreting them as monotonic scaling.
+
+### Extension acceptance gates
+
+1. The batch has exactly nine deterministic cells with the declared triangle and
+   object counts in one fixed domain; only the two factors vary.
+2. True-brute, mesh-BVH, and scene-BVH have identical hit flags, object IDs, and
+   ranges within `1e-6` at every cell, pose, and layout.
+3. Timing output has exactly 243 unique rows with unchanged 20/200 timing
+   methodology and construction exclusions.
+4. Safety trials, mesh-sweep timing and analysis, and object-sweep timing and
+   analysis remain byte-for-byte unchanged.
+5. Every cell reports both same-ray transitions, budget-mapped rays/safe stops,
+   and convergence.
+6. Robustness checks and every adverse comparison are published without an
+   unjustified statistical model or invented threshold.
+7. Every ray-axis and factor-axis timing inversion is explicit, and the measured
+   conclusion is stated regardless of direction.
+8. Clean build, tests, analyzers, and deterministic analysis regeneration pass
+   without new factor levels, a speed sweep, a safety metric, or unrelated
+   refactoring.
+
 ## Scope held for future experiments
 
 These were intentionally not included in the completed first pass:
 
-- combined mesh-complexity/object-count and speed sweeps;
+- speed sweeps and a combined speed operating envelope;
 - live deadline-limited closed-loop trials;
 - vertical layouts and progressive 2D ordering;
 - ground, debris, boxes, cones, panels, and barriers;

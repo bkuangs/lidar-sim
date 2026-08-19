@@ -15,6 +15,20 @@ constexpr int stacks = 4;
 constexpr int trianglesPerObject = 120;
 constexpr double objectHeight = 2.0;
 constexpr std::array<int, 5> objectCounts = {{25, 50, 100, 200, 400}};
+constexpr std::array<int, 3> matrixObjectCounts = {{25, 100, 400}};
+
+struct MeshComplexity
+{
+    const char *name;
+    int multiplier;
+    unsigned subdivision_passes;
+};
+
+constexpr std::array<MeshComplexity, 3> meshComplexities = {{
+    {"1x", 1, 0},
+    {"4x", 4, 1},
+    {"16x", 16, 2},
+}};
 
 struct ObjectSpec
 {

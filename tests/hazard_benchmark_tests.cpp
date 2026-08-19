@@ -4,11 +4,13 @@
 #include "scan.hpp"
 #include "scene_bvh.hpp"
 
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <memory>
 #include <map>
 #include <set>
+#include <string>
 #include <vector>
 
 namespace
@@ -220,6 +222,66 @@ void testNestedObjectCountTimingScenes()
     }
 }
 
+void testComplexityObjectCountMatrixCells()
+{
+    using hazard_timing_scene::MeshComplexity;
+    using hazard_timing_scene::ObjectSpec;
+    assert(hazard_timing_scene::meshComplexities.size() == 3);
+    assert(hazard_timing_scene::matrixObjectCounts ==
+           (std::array<int, 3>{{25, 100, 400}}));
+
+    const std::array<const char *, 3> expected_names = {{"1x", "4x", "16x"}};
+    const std::array<int, 3> expected_multipliers = {{1, 4, 16}};
+    const std::array<unsigned, 3> expected_passes = {{0, 1, 2}};
+    for (size_t index = 0;
+         index < hazard_timing_scene::meshComplexities.size();
+         ++index)
+    {
+        const MeshComplexity &complexity =
+            hazard_timing_scene::meshComplexities[index];
+        assert(std::string(complexity.name) == expected_names[index]);
+        assert(complexity.multiplier == expected_multipliers[index]);
+        assert(complexity.subdivision_passes == expected_passes[index]);
+    }
+
+    size_t cells = 0;
+    for (const MeshComplexity &complexity :
+         hazard_timing_scene::meshComplexities)
+    {
+        const size_t expected_triangles =
+            hazard_timing_scene::trianglesPerObject *
+            static_cast<size_t>(complexity.multiplier);
+        for (const int object_count :
+             hazard_timing_scene::matrixObjectCounts)
+        {
+            const std::vector<ObjectSpec> specs =
+                hazard_timing_scene::makeObjectCountSpecs(object_count);
+            const std::vector<ObjectSpec> repeated =
+                hazard_timing_scene::makeObjectCountSpecs(object_count);
+            assert(specs.size() == static_cast<size_t>(object_count));
+            assert(repeated.size() == specs.size());
+
+            size_t total_triangles = 0;
+            for (size_t index = 0; index < specs.size(); ++index)
+            {
+                assertObjectSpecEqual(specs[index], repeated[index]);
+                const TriangleMeshData base = makePillarMeshData(
+                    specs[index].x, specs[index].y, specs[index].radius,
+                    specs[index].height, hazard_timing_scene::slices,
+                    hazard_timing_scene::stacks);
+                const TriangleMeshData subdivided = subdivideTriangleFaces(
+                    base, complexity.subdivision_passes);
+                assert(subdivided.triangles.size() == expected_triangles);
+                total_triangles += subdivided.triangles.size();
+            }
+            assert(total_triangles ==
+                   static_cast<size_t>(object_count) * expected_triangles);
+            ++cells;
+        }
+    }
+    assert(cells == 9);
+}
+
 void testFixedScansAndTracerParity()
 {
     constexpr int hazardId = 1;
@@ -286,6 +348,7 @@ int main()
     testGeometryPreservingSubdivision();
     testTimingPillarTriangleCounts();
     testNestedObjectCountTimingScenes();
+    testComplexityObjectCountMatrixCells();
     testFixedScansAndTracerParity();
     testHazardGeometryDimensions();
     testOnlyHazardObjectIdTriggersDetection();

@@ -54,6 +54,10 @@ add_test(
 add_test(
     NAME object_count_analysis
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_object_count_analysis.py)
+add_test(
+    NAME complexity_object_count_analysis
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_complexity_object_count_analysis.py)
 
 set(HAZARD_MVP_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/hazard_mvp)
 add_custom_target(
@@ -88,3 +92,24 @@ add_custom_target(
     DEPENDS hazard_benchmark
     USES_TERMINAL
     COMMENT "Running the object-count scene-BVH extension")
+
+set(HAZARD_COMPLEXITY_OBJECT_COUNT_OUTPUT_DIR
+    ${CMAKE_CURRENT_BINARY_DIR}/hazard_complexity_object_count)
+add_custom_target(
+    hazard_complexity_object_count
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+            ${HAZARD_COMPLEXITY_OBJECT_COUNT_OUTPUT_DIR}
+    COMMAND $<TARGET_FILE:hazard_benchmark>
+            complexity-object-count-timing
+            --csv
+            ${HAZARD_COMPLEXITY_OBJECT_COUNT_OUTPUT_DIR}/hazard_complexity_object_count_timing.csv
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/analyze_complexity_object_count.py
+            --trials ${CMAKE_CURRENT_SOURCE_DIR}/plots/hazard_trials.csv
+            --timing
+            ${HAZARD_COMPLEXITY_OBJECT_COUNT_OUTPUT_DIR}/hazard_complexity_object_count_timing.csv
+            --out-dir
+            ${HAZARD_COMPLEXITY_OBJECT_COUNT_OUTPUT_DIR}/analysis
+    DEPENDS hazard_benchmark
+    USES_TERMINAL
+    COMMENT "Running the complexity-by-object-count interaction matrix")

@@ -1,0 +1,7 @@
+complexity,object_count,triangles_per_mesh,transition,from_mode,to_mode,ray_count,from_p95_ms,to_p95_ms,to_minus_from_p95_ms,comparison_result
+1x,25,120,mesh-bvh_to_scene-bvh,mesh-bvh,scene-bvh,33,0.01945805,0.0195872,0.00012914999999999802,ADVERSE
+4x,25,480,mesh-bvh_to_scene-bvh,mesh-bvh,scene-bvh,129,0.08575205000000001,0.08689999999999999,0.001147949999999981,ADVERSE
+16x,25,1920,mesh-bvh_to_scene-bvh,mesh-bvh,scene-bvh,9,0.007379199999999998,0.017287499999999987,0.009908299999999988,ADVERSE
+16x,25,1920,mesh-bvh_to_scene-bvh,mesh-bvh,scene-bvh,33,0.02508715,0.03338335,0.0082962,ADVERSE
+16x,25,1920,mesh-bvh_to_scene-bvh,mesh-bvh,scene-bvh,65,0.051335099999999995,0.05431039999999998,0.0029752999999999863,ADVERSE
+16x,100,1920,mesh-bvh_to_scene-bvh,mesh-bvh,scene-bvh,257,0.8745690499999994,0.8975943999999995,0.023025350000000055,ADVERSE
