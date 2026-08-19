@@ -43,6 +43,8 @@ TABLE_FILENAMES = {
         "hazard_complexity_object_count_acceptance_gates.csv",
 }
 PLOT_FILENAME = "hazard_complexity_object_count_interactions.png"
+DETAIL_PLOT_FILENAME = (
+    "hazard_complexity_object_count_interactions_by_ray.png")
 
 
 def _cells():
@@ -577,6 +579,47 @@ def evaluate_gates(timing, mappings, robustness, exceptions, inversions):
     return gates
 
 
+def primary_heatmap_values(timing_layers):
+    by_key = {
+        (row["complexity"], row["object_count"], row["transition"]): row
+        for row in timing_layers if row["ray_count"] == 361
+    }
+    return {
+        f"{from_mode}_to_{to_mode}": [
+            [
+                by_key[
+                    complexity, object_count,
+                    f"{from_mode}_to_{to_mode}"]["p95_speedup"]
+                for object_count in EXPECTED_OBJECT_COUNTS
+            ]
+            for complexity in EXPECTED_COMPLEXITIES
+        ]
+        for from_mode, to_mode in ADJACENT_MODE_PAIRS
+    }
+
+
+def detail_heatmap_values(timing_layers):
+    ray_counts = tuple(
+        ray for ray in shared.EXPECTED_RAY_COUNTS if ray != 0)
+    by_key = {
+        (row["complexity"], row["object_count"],
+         row["transition"], row["ray_count"]): row
+        for row in timing_layers
+    }
+    return {
+        f"{from_mode}_to_{to_mode}": [
+            [
+                by_key[
+                    complexity, object_count,
+                    f"{from_mode}_to_{to_mode}", ray]["p95_speedup"]
+                for ray in ray_counts
+            ]
+            for complexity, object_count in _cells()
+        ]
+        for from_mode, to_mode in ADJACENT_MODE_PAIRS
+    }
+
+
 def plot(timing_layers, out_dir):
     try:
         import matplotlib
@@ -588,53 +631,78 @@ def plot(timing_layers, out_dir):
             "plotting requires matplotlib; pass --no-plots if unavailable"
         ) from exc
 
-    ray_counts = tuple(
-        ray for ray in shared.EXPECTED_RAY_COUNTS if ray != 0)
     transitions = [
         f"{from_mode}_to_{to_mode}"
         for from_mode, to_mode in ADJACENT_MODE_PAIRS
     ]
-    by_key = {
-        (row["complexity"], row["object_count"],
-         row["transition"], row["ray_count"]): row
-        for row in timing_layers
-    }
-    values_by_transition = {}
-    colors = []
-    for transition in transitions:
-        values = [
-            [by_key[complexity, object_count, transition, ray]["p95_speedup"]
-             for ray in ray_counts]
-            for complexity, object_count in _cells()
-        ]
-        if any(value is None or value <= 0
-               for row in values for value in row):
-            raise shared.ValidationError(
-                "heatmap requires positive nonzero-ray p95 speedups")
-        values_by_transition[transition] = values
-        colors.extend(math.log2(value) for row in values for value in row)
-    extent = max((abs(value) for value in colors), default=1.0)
-    if extent == 0:
-        extent = 1.0
-    norm = TwoSlopeNorm(vmin=-extent, vcenter=0.0, vmax=extent)
 
-    fig, axes = plt.subplots(2, 1, figsize=(11, 10), sharex=True)
+    def speedup_norm(values_by_transition):
+        values = [
+            value
+            for transition in transitions
+            for row in values_by_transition[transition]
+            for value in row
+        ]
+        if any(value is None or value <= 0 for value in values):
+            raise shared.ValidationError(
+                "heatmap requires positive p95 speedups")
+        extent = max((abs(math.log2(value)) for value in values), default=1.0)
+        return TwoSlopeNorm(
+            vmin=-max(extent, 1.0), vcenter=0.0, vmax=max(extent, 1.0))
+
+    primary_values = primary_heatmap_values(timing_layers)
+    primary_norm = speedup_norm(primary_values)
+    fig, axes = plt.subplots(
+        1, 2, figsize=(11, 4.8), sharex=True, sharey=True)
     image = None
-    labels = [
-        f"{complexity} / {object_count}"
-        for complexity, object_count in _cells()
-    ]
     titles = (
         "(a) true brute to mesh BVH",
         "(b) mesh BVH to scene BVH",
     )
     for axis, transition, title in zip(axes, transitions, titles):
-        values = values_by_transition[transition]
+        values = primary_values[transition]
         color_values = [
             [math.log2(value) for value in row] for row in values
         ]
         image = axis.imshow(
-            color_values, aspect="auto", cmap="RdYlGn", norm=norm)
+            color_values, cmap="RdYlGn", norm=primary_norm)
+        for row_index, row in enumerate(values):
+            for column_index, value in enumerate(row):
+                axis.text(
+                    column_index, row_index, f"{value:.2f}x",
+                    ha="center", va="center", fontsize=10)
+        axis.set_xticks(
+            range(len(EXPECTED_OBJECT_COUNTS)), EXPECTED_OBJECT_COUNTS)
+        axis.set_yticks(
+            range(len(EXPECTED_COMPLEXITIES)), EXPECTED_COMPLEXITIES)
+        axis.set_xlabel("object count")
+        axis.set_title(title)
+    axes[0].set_ylabel("mesh complexity")
+    fig.colorbar(
+        image, ax=axes, label="log2 p95 speedup (annotations show x)",
+        fraction=.035, pad=.04)
+    fig.suptitle("361-ray p95 speedups across the matched factor matrix")
+    fig.subplots_adjust(
+        left=.08, right=.88, top=.84, bottom=.15, wspace=.12)
+    fig.savefig(os.path.join(out_dir, PLOT_FILENAME), dpi=140)
+    plt.close(fig)
+
+    ray_counts = tuple(
+        ray for ray in shared.EXPECTED_RAY_COUNTS if ray != 0)
+    detail_values = detail_heatmap_values(timing_layers)
+    detail_norm = speedup_norm(detail_values)
+    fig, axes = plt.subplots(2, 1, figsize=(11, 10), sharex=True)
+    labels = [
+        f"{complexity} / {object_count}"
+        for complexity, object_count in _cells()
+    ]
+    for axis, transition, title in zip(axes, transitions, titles):
+        values = detail_values[transition]
+        color_values = [
+            [math.log2(value) for value in row] for row in values
+        ]
+        image = axis.imshow(
+            color_values, aspect="auto", cmap="RdYlGn", norm=detail_norm)
         for row_index, row in enumerate(values):
             for column_index, value in enumerate(row):
                 axis.text(
@@ -649,9 +717,9 @@ def plot(timing_layers, out_dir):
         image, ax=axes, label="log2 p95 speedup (annotations show x)",
         fraction=.025, pad=.02)
     fig.suptitle(
-        "Acceleration-layer p95 speedups across complexity and object count")
+        "Nonzero-ray p95 speedups across complexity and object count")
     fig.subplots_adjust(left=.15, right=.90, top=.92, bottom=.08, hspace=.20)
-    fig.savefig(os.path.join(out_dir, PLOT_FILENAME), dpi=140)
+    fig.savefig(os.path.join(out_dir, DETAIL_PLOT_FILENAME), dpi=140)
     plt.close(fig)
 
 

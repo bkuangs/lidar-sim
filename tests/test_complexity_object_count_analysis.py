@@ -263,11 +263,34 @@ class ComplexityObjectCountAnalysisTest(unittest.TestCase):
         importlib.util.find_spec("matplotlib"), "matplotlib unavailable")
     def test_exact_plot_filename_contract(self):
         out_dir = os.path.join(self.temp_dir, "plot-analysis")
-        analysis.analyze(TRIALS, self.timing_path, out_dir, make_plots=True)
-        self.assertTrue(os.path.isfile(
-            os.path.join(out_dir, analysis.PLOT_FILENAME)))
+        result = analysis.analyze(
+            TRIALS, self.timing_path, out_dir, make_plots=True)
+        primary = analysis.primary_heatmap_values(
+            result["timing_attribution"])
+        detail = analysis.detail_heatmap_values(
+            result["timing_attribution"])
+        self.assertTrue(all(
+            len(values) == 3 and all(len(row) == 3 for row in values)
+            for values in primary.values()))
+        self.assertTrue(all(
+            len(values) == 9 and all(len(row) == 8 for row in values)
+            for values in detail.values()))
+        timing_by_key = {
+            (row["complexity"], row["object_count"], row["transition"]):
+                row["p95_speedup"]
+            for row in result["timing_attribution"]
+            if row["ray_count"] == 361
+        }
+        for transition, values in primary.items():
+            for complexity_index, complexity in enumerate(
+                    analysis.EXPECTED_COMPLEXITIES):
+                for count_index, object_count in enumerate(
+                        analysis.EXPECTED_OBJECT_COUNTS):
+                    self.assertEqual(
+                        timing_by_key[complexity, object_count, transition],
+                        values[complexity_index][count_index])
         self.assertEqual(
-            {analysis.PLOT_FILENAME},
+            {analysis.PLOT_FILENAME, analysis.DETAIL_PLOT_FILENAME},
             {name for name in os.listdir(out_dir) if name.endswith(".png")})
 
 

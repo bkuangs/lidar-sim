@@ -457,7 +457,9 @@ separate `plots/hazard_complexity_object_count_analysis/` publication reports:
   with every adverse or equal comparison retained;
 - every adjacent p95 decrease along the ray-count, mesh-complexity, and
   object-count axes; and
-- simple tables and faceted heatmaps without a fitted interaction model.
+- a primary pair of annotated `3 x 3` complexity-by-object-count heatmaps at
+  361 rays, plus a secondary all-nonzero-ray diagnostic, without a fitted
+  interaction model.
 
 No monotonicity, significance threshold, or favorable result is required. The
 publication states the measured conclusion even if either separate-sweep result

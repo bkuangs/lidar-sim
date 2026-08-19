@@ -162,7 +162,7 @@ Detailed timing and budget attribution are in the same directory. These remain
 machine-specific p95 estimates, not hard real-time guarantees.
 
 ### Joint mesh-complexity and object-count interactions
-<img src="plots/hazard_complexity_object_count_analysis/hazard_complexity_object_count_interactions.png" alt="Per-mesh and scene-level p95 speedups across the matched mesh-complexity and object-count matrix" width="100%" />
+<img src="plots/hazard_complexity_object_count_analysis/hazard_complexity_object_count_interactions.png" alt="Two annotated 3 by 3 heatmaps of per-mesh and scene-level p95 speedups at 361 rays" width="100%" />
 
 This matched extension measures all **nine** `1x/4x/16x × 25/100/400` cells in
 one fresh timing batch. It retains the exact coplanar mesh subdivision,
@@ -193,3 +193,9 @@ comparisons, per-cell convergence, and every gate are in
 [`plots/hazard_complexity_object_count_analysis/`](plots/hazard_complexity_object_count_analysis/).
 These are descriptive machine-specific p95 estimates, not a fitted interaction
 model or hard real-time guarantees.
+
+#### All nonzero ray counts
+<img src="plots/hazard_complexity_object_count_analysis/hazard_complexity_object_count_interactions_by_ray.png" alt="Detailed per-mesh and scene-level p95 speedups for every matrix cell and nonzero ray count" width="100%" />
+
+This secondary diagnostic retains every nonzero-ray comparison; the primary
+figure above is the readable 361-ray factor matrix.
