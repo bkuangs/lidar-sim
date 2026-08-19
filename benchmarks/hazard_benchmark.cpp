@@ -1,4 +1,5 @@
 #include "hazard_trial.hpp"
+#include "hazard_timing_scene.hpp"
 #include "meshes.hpp"
 #include "scan.hpp"
 #include "scene_bvh.hpp"
@@ -138,16 +139,13 @@ BenchmarkWorld makeTimingWorld(const MeshComplexity &complexity)
     BenchmarkWorld world;
     world.meshes.reserve(timingBackgroundCount);
     world.obstacles.reserve(timingBackgroundCount);
-    for (int index = 0; index < timingBackgroundCount; ++index)
+    for (const hazard_timing_scene::ObjectSpec &spec :
+         hazard_timing_scene::makePr2ObjectSpecs())
     {
-        const int column = index % 10;
-        const int row = index / 10;
-        const double x = 2.5 + 2.0 * column + 0.13 * (row % 3);
-        const double y = -4.5 + row + 0.07 * (column % 4);
-        const double radius = 0.18 + 0.02 * (index % 5);
         addPillar(
-            world, x, y, radius, 2.0, timingSlices, timingStacks,
-            1000 + index, complexity.subdivision_passes);
+            world, spec.x, spec.y, spec.radius, spec.height,
+            timingSlices, timingStacks, spec.object_id,
+            complexity.subdivision_passes);
     }
     if (world.obstacles.size() != timingBackgroundCount)
         throw std::runtime_error("timing scene must contain exactly 100 background objects");
@@ -161,6 +159,28 @@ BenchmarkWorld makeTimingWorld(const MeshComplexity &complexity)
             std::string(complexity.name) +
             " timing meshes have the wrong triangle count");
     }
+    finishWorld(world);
+    return world;
+}
+
+BenchmarkWorld makeObjectCountTimingWorld(int object_count)
+{
+    BenchmarkWorld world;
+    const std::vector<hazard_timing_scene::ObjectSpec> specs =
+        hazard_timing_scene::makeObjectCountSpecs(object_count);
+    world.meshes.reserve(specs.size());
+    world.obstacles.reserve(specs.size());
+    for (const hazard_timing_scene::ObjectSpec &spec : specs)
+    {
+        addPillar(
+            world, spec.x, spec.y, spec.radius, spec.height,
+            hazard_timing_scene::slices, hazard_timing_scene::stacks,
+            spec.object_id, 0);
+    }
+    if (world.obstacles.size() != static_cast<size_t>(object_count))
+        throw std::runtime_error("object-count timing scene has the wrong object count");
+    if (world.triangles_per_mesh != hazard_timing_scene::trianglesPerObject)
+        throw std::runtime_error("object-count timing meshes must have 120 triangles");
     finishWorld(world);
     return world;
 }
@@ -532,11 +552,52 @@ void runTiming(const std::string &csv_path)
               << csv_path << '\n';
 }
 
+void runObjectCountTiming(const std::string &csv_path)
+{
+    std::ofstream csv(csv_path);
+    if (!csv)
+        throw std::runtime_error("cannot open CSV for writing: " + csv_path);
+    csv << std::setprecision(17);
+    csv << "object_count,triangles_per_mesh,mode,ray_count,median_ms,p95_ms\n";
+
+    const std::vector<Eigen::Isometry3d> poses = makeTimingPoses();
+    size_t rows = 0;
+    for (const int object_count : hazard_timing_scene::objectCounts)
+    {
+        const BenchmarkWorld world = makeObjectCountTimingWorld(object_count);
+        verifyTimingScene(world, poses);
+        for (const TraceMode mode :
+             {TraceMode::TrueBrute, TraceMode::MeshBvh, TraceMode::SceneBvh})
+        {
+            for (const int ray_count : nestedHorizontalRayLayoutCounts)
+            {
+                const auto result =
+                    measureTiming(world, mode, ray_count, poses);
+                csv << object_count << ',' << world.triangles_per_mesh << ','
+                    << modeName(mode) << ',' << ray_count << ','
+                    << result.first << ',' << result.second << '\n';
+                ++rows;
+            }
+        }
+    }
+    csv.flush();
+    if (!csv)
+        throw std::runtime_error("failed while writing CSV: " + csv_path);
+    std::cout << "[object-count-timing] wrote " << rows
+              << " rows for 5 object counts using exactly "
+              << hazard_timing_scene::trianglesPerObject
+              << " triangles per object, "
+              << timingWarmupScans << " warmups and "
+              << timingMeasuredScans << " measured scans per row to "
+              << csv_path << '\n';
+}
+
 void printUsage(std::ostream &output)
 {
     output << "Usage:\n"
            << "  hazard_benchmark safety --csv PATH\n"
-           << "  hazard_benchmark timing --csv PATH\n";
+           << "  hazard_benchmark timing --csv PATH\n"
+           << "  hazard_benchmark object-count-timing --csv PATH\n";
 }
 } // namespace
 
@@ -545,7 +606,8 @@ int main(int argc, char **argv)
     if (argc != 4 || std::string(argv[2]) != "--csv" ||
         std::string(argv[3]).empty() ||
         (std::string(argv[1]) != "safety" &&
-         std::string(argv[1]) != "timing"))
+         std::string(argv[1]) != "timing" &&
+         std::string(argv[1]) != "object-count-timing"))
     {
         std::cerr << "error: expected exactly one mode and --csv PATH\n";
         printUsage(std::cerr);
@@ -556,8 +618,10 @@ int main(int argc, char **argv)
     {
         if (std::string(argv[1]) == "safety")
             runSafety(argv[3]);
-        else
+        else if (std::string(argv[1]) == "timing")
             runTiming(argv[3]);
+        else
+            runObjectCountTiming(argv[3]);
     }
     catch (const std::exception &error)
     {

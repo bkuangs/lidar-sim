@@ -334,11 +334,88 @@ reported as timing noise, not interpreted as monotonic scaling.
 7. Clean build, tests, analyzer, generated artifacts, and reproducibility pass
    without another sweep or unrelated refactor.
 
+## Fixed-complexity object-count extension
+
+This extension asks one additional question: how does the incremental value of
+the top-level scene BVH change as object count grows while mesh complexity and
+all timing controls remain fixed?
+
+### Locked controls and nested scenes
+
+Object count is exactly `25, 50, 100, 200, 400`. Every object uses the `1x`
+pillar mesh with zero subdivision passes, `12x4` slices/stacks, and exactly 120
+triangles. The extension retains the same 32 poses, nine nested ray layouts,
+three tracer definitions, 20 warmups, 200 measured complete scans, timing
+boundaries, budgets, and safety curve.
+
+The 25- and 50-object levels are spatially balanced nested subsets of PR 2's
+exact 100-object set. Membership selection is separate from construction order:
+selected PR 2 objects are always instantiated in original row-major order, and
+deterministic low-discrepancy additions inside that set's bounds use one stable
+canonical order for the 200- and 400-object levels. Object IDs, poses, radii, and
+geometry do not change after an object first appears. All levels therefore occupy
+one fixed domain rather than expanding scene bounds or adding objects outside
+measured rays.
+
+The safety experiment is not rerun or duplicated. Every count/mode timing series
+maps onto `plots/hazard_trials.csv` and its validated mode-independent fixed-ray
+safety curve.
+
+### Output and measured result
+
+`plots/hazard_object_count_timing.csv` contains exactly
+`5 counts x 3 modes x 9 ray counts = 135` unique rows. The separate
+`plots/hazard_object_count_analysis/` slice reports mesh-BVH -> scene-BVH
+same-ray latency, budget-mapped ray and safe-stop gains, a per-count convergence
+budget, explicit robustness outcomes, every adverse comparison, and timing
+inversions along both ray-count and object-count axes.
+
+At 361 rays, the measured incremental results are:
+
+| objects | mesh-BVH p95 (ms) | scene-BVH p95 (ms) | speedup |
+| ---: | ---: | ---: | ---: |
+| 25 | 0.393 | 0.408 | 0.96x |
+| 50 | 1.102 | 0.439 | 2.51x |
+| 100 | 1.503 | 0.512 | 2.94x |
+| 200 | 1.126 | 0.350 | 3.22x |
+| 400 | 3.179 | 0.404 | 7.86x |
+
+The result is mixed and non-monotonic at low counts. Scene-BVH p95 is not lower
+at every nonzero ray count for 25 or 50 objects (3 and 1 exceptions), but it is
+lower at all eight nonzero ray counts for 100, 200, and 400 objects. At the
+0.5 ms budget, scene-BVH adds 0, 232, 192, 232, and 296 mapped rays over
+mesh-BVH at 25, 50, 100, 200, and 400 objects. Every mapped pair is already on
+the fixed curve's 100% safe-stop plateau, so safe-stop gain is zero at every
+standard budget and count.
+
+The measured run has 4 adjacent-ray and 24 adjacent-count p95 decreases. They
+remain in the published inversion table and the discrete mapping still selects
+the largest individually measured ray count whose p95 fits. No placement,
+metric, smoothing, or rerun was used to force a trend.
+
+### Extension acceptance gates
+
+1. All five scenes have exact unique counts, are deterministic nested subsets,
+   preserve the exact PR 2 100-object construction sequence and one fixed spatial
+   domain, and use exactly 120 triangles per object.
+2. True-brute, mesh-BVH, and scene-BVH have identical hit flags, object IDs, and
+   ranges within `1e-6` at every count, pose, and layout.
+3. Timing output has exactly 135 unique rows with unchanged timing methodology
+   and construction exclusions.
+4. Safety trials, fixed-ray safety outputs, and PR 2 mesh-complexity artifacts
+   remain byte-for-byte unchanged.
+5. Every count reports same-ray p95 reduction/speedup, budget ray gain, mapped
+   safe-stop gain, and convergence, including explicit mixed/regressed results.
+6. Every scaling claim is backed by reported data, with exceptions and inversions
+   visible.
+7. Existing scientific controls, build, tests, analyzers, and artifact
+   reproducibility pass without a mesh-by-object matrix or speed sweep.
+
 ## Scope held for future experiments
 
 These were intentionally not included in the completed first pass:
 
-- additional speeds and background-count sweeps;
+- combined mesh-complexity/object-count and speed sweeps;
 - live deadline-limited closed-loop trials;
 - vertical layouts and progressive 2D ordering;
 - ground, debris, boxes, cones, panels, and barriers;

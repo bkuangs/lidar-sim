@@ -1,0 +1,14 @@
+gate,status,detail
+timing_completeness,PASS,135 rows = 5 object counts x 3 modes x 9 ray counts
+fixed_ray_safety_curve,PASS,all object counts map onto one paired mode-independent safety curve
+scene_bvh_incremental_result_25,INFO,MIXED_OR_REGRESSED; 3 nonzero-ray exception(s)
+convergence_25,PASS,"12.1105 ms maps to true-brute=361, mesh-bvh=361, scene-bvh=361 rays"
+scene_bvh_incremental_result_50,INFO,MIXED_OR_REGRESSED; 1 nonzero-ray exception(s)
+convergence_50,PASS,"21.5539 ms maps to true-brute=361, mesh-bvh=361, scene-bvh=361 rays"
+scene_bvh_incremental_result_100,INFO,IMPROVED_AT_ALL_NONZERO_RAYS; 0 nonzero-ray exception(s)
+convergence_100,PASS,"45.7003 ms maps to true-brute=361, mesh-bvh=361, scene-bvh=361 rays"
+scene_bvh_incremental_result_200,INFO,IMPROVED_AT_ALL_NONZERO_RAYS; 0 nonzero-ray exception(s)
+convergence_200,PASS,"62.1695 ms maps to true-brute=361, mesh-bvh=361, scene-bvh=361 rays"
+scene_bvh_incremental_result_400,INFO,IMPROVED_AT_ALL_NONZERO_RAYS; 0 nonzero-ray exception(s)
+convergence_400,PASS,"157.066 ms maps to true-brute=361, mesh-bvh=361, scene-bvh=361 rays"
+timing_inversions,INFO,4 ray-axis and 24 object-axis p95 decrease(s) reported without smoothing
